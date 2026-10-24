@@ -1,4 +1,5 @@
-// Receive PS/2 Set-2 keyboard bytes and remember the last numeric key pressed.
+// Receive PS/2 Set-2 keyboard bytes, remember the last numeric key pressed,
+// and emit monophonic note events from four keyboard rows.
 // PS/2 pins are asynchronous to clk; each is synchronized and lightly filtered.
 // The PIC24 on Nexys A7 translates a supported USB HID keyboard to this PS/2
 // interface. This module is receive-only and never drives either pin.
@@ -11,7 +12,11 @@ module ps2_keyboard_digit #(
     input  wire       ps2_clk,
     input  wire       ps2_data,
     output reg  [3:0] digit,
-    output reg        digit_valid
+    output reg        digit_valid,
+    output reg  [2:0] note_index,
+    output reg  [2:0] note_octave,
+    output reg        note_event,
+    output reg        note_down
 );
     (* ASYNC_REG = "TRUE" *) reg [1:0] clk_sync;
     (* ASYNC_REG = "TRUE" *) reg [1:0] data_sync;
@@ -31,6 +36,56 @@ module ps2_keyboard_digit #(
     reg [7:0] byte_data;
     reg break_prefix;
     reg extended_prefix;
+    reg [7:0] held_note_scan_code;
+    reg held_note_valid;
+
+    function automatic is_note_scan_code(input [7:0] scan_code);
+        begin
+            case (scan_code)
+                // Top row 1..7: octave 1.
+                8'h16, 8'h1E, 8'h26, 8'h25, 8'h2E, 8'h36, 8'h3D,
+                // Q..U: octave 2.
+                8'h15, 8'h1D, 8'h24, 8'h2D, 8'h2C, 8'h35, 8'h3C,
+                // A..J: octave 3.
+                8'h1C, 8'h1B, 8'h23, 8'h2B, 8'h34, 8'h33, 8'h3B,
+                // Z..M: octave 4.
+                8'h1A, 8'h22, 8'h21, 8'h2A, 8'h32, 8'h31, 8'h3A:
+                    is_note_scan_code = 1'b1;
+                default: is_note_scan_code = 1'b0;
+            endcase
+        end
+    endfunction
+
+    function automatic [2:0] note_index_for_scan(input [7:0] scan_code);
+        begin
+            case (scan_code)
+                8'h16, 8'h15, 8'h1C, 8'h1A: note_index_for_scan = 3'd0; // C
+                8'h1E, 8'h1D, 8'h1B, 8'h22: note_index_for_scan = 3'd1; // D
+                8'h26, 8'h24, 8'h23, 8'h21: note_index_for_scan = 3'd2; // E
+                8'h25, 8'h2D, 8'h2B, 8'h2A: note_index_for_scan = 3'd3; // F
+                8'h2E, 8'h2C, 8'h34, 8'h32: note_index_for_scan = 3'd4; // G
+                8'h36, 8'h35, 8'h33, 8'h31: note_index_for_scan = 3'd5; // A
+                8'h3D, 8'h3C, 8'h3B, 8'h3A: note_index_for_scan = 3'd6; // B
+                default: note_index_for_scan = 3'd0;
+            endcase
+        end
+    endfunction
+
+    function automatic [2:0] octave_for_scan(input [7:0] scan_code);
+        begin
+            case (scan_code)
+                8'h16, 8'h1E, 8'h26, 8'h25, 8'h2E, 8'h36, 8'h3D:
+                    octave_for_scan = 3'd0;
+                8'h15, 8'h1D, 8'h24, 8'h2D, 8'h2C, 8'h35, 8'h3C:
+                    octave_for_scan = 3'd1;
+                8'h1C, 8'h1B, 8'h23, 8'h2B, 8'h34, 8'h33, 8'h3B:
+                    octave_for_scan = 3'd2;
+                8'h1A, 8'h22, 8'h21, 8'h2A, 8'h32, 8'h31, 8'h3A:
+                    octave_for_scan = 3'd3;
+                default: octave_for_scan = 3'd3;
+            endcase
+        end
+    endfunction
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -66,11 +121,18 @@ module ps2_keyboard_digit #(
             byte_data     <= 0;
             break_prefix  <= 1'b0;
             extended_prefix <= 1'b0;
+            held_note_scan_code <= 8'h00;
+            held_note_valid <= 1'b0;
             digit         <= 0;
             digit_valid   <= 1'b0;
+            note_index    <= 0;
+            note_octave   <= 3'd3;
+            note_event    <= 1'b0;
+            note_down     <= 1'b0;
         end else begin
             byte_valid  <= 1'b0;
             digit_valid <= 1'b0;
+            note_event  <= 1'b0;
 
             if (falling_edge) begin
                 age <= 0;
@@ -112,7 +174,22 @@ module ps2_keyboard_digit #(
                 end else if (byte_data == 8'hE0) begin
                     extended_prefix <= 1'b1;
                 end else begin
-                    if (!break_prefix && !extended_prefix) begin
+                    if (!extended_prefix && break_prefix) begin
+                        if (held_note_valid && byte_data == held_note_scan_code) begin
+                            note_event <= 1'b1;
+                            note_down  <= 1'b0;
+                            held_note_valid <= 1'b0;
+                        end
+                    end else if (!extended_prefix) begin
+                        if (is_note_scan_code(byte_data)) begin
+                            note_index  <= note_index_for_scan(byte_data);
+                            note_octave <= octave_for_scan(byte_data);
+                            note_event  <= 1'b1;
+                            note_down   <= 1'b1;
+                            held_note_scan_code <= byte_data;
+                            held_note_valid <= 1'b1;
+                        end
+
                         case (byte_data)
                             // Number row, PS/2 Set 2.
                             8'h16: begin digit <= 4'd1; digit_valid <= 1'b1; end

@@ -47,6 +47,21 @@ module audio_nexys_a7 (
     reg           play        ;
     reg  [3:0]    volume      ;
     reg  [2:0]    note_index  ;
+    wire [2:0]    keyboard_note_index;
+    wire [2:0]    keyboard_note_octave;
+    wire          keyboard_note_event;
+    wire          keyboard_note_down;
+    (* ASYNC_REG = "TRUE" *) reg [1:0] keyboard_event_sync;
+    (* ASYNC_REG = "TRUE" *) reg [1:0] keyboard_down_sync;
+    (* ASYNC_REG = "TRUE" *) reg [2:0] keyboard_note_index_sync1;
+    (* ASYNC_REG = "TRUE" *) reg [2:0] keyboard_note_index_sync2;
+    (* ASYNC_REG = "TRUE" *) reg [2:0] keyboard_note_octave_sync1;
+    (* ASYNC_REG = "TRUE" *) reg [2:0] keyboard_note_octave_sync2;
+    reg           keyboard_event_sync_d;
+    reg           keyboard_note_gate;
+    wire          keyboard_event_audio;
+    wire [2:0]    audio_note_index;
+    wire [2:0]    audio_note_octave;
   //----------- Audio data path                                  -----------//
     wire  [15:0]  sample        ;
     wire  [15:0]  local_sample  ;
@@ -192,7 +207,11 @@ module audio_nexys_a7 (
       .ps2_clk      ( PS2_CLK             ),
       .ps2_data     ( PS2_DATA            ),
       .digit        ( keyboard_digit      ),
-      .digit_valid  ( keyboard_digit_valid)
+      .digit_valid  ( keyboard_digit_valid),
+      .note_index   ( keyboard_note_index ),
+      .note_octave  ( keyboard_note_octave),
+      .note_event   ( keyboard_note_event ),
+      .note_down    ( keyboard_note_down  )
     );
 
     always_ff @(posedge clk_5mhz0d or negedge keyboard_rst_n) begin
@@ -201,6 +220,34 @@ module audio_nexys_a7 (
       else if (keyboard_digit_valid)
         keyboard_digit_seen <= 1'b1;
     end
+
+    // PS/2 decoding runs at 5 MHz; synchronize its event and associated data
+    // into the 49 MHz audio domain before controlling the DDS/FIFO.
+    always_ff @(posedge clk_audio or negedge aud_rst_n) begin
+      if (!aud_rst_n) begin
+        keyboard_event_sync       <= 2'b00;
+        keyboard_down_sync        <= 2'b00;
+        keyboard_note_index_sync1 <= 3'b000;
+        keyboard_note_index_sync2 <= 3'b000;
+        keyboard_note_octave_sync1 <= 3'd3;
+        keyboard_note_octave_sync2 <= 3'd3;
+        keyboard_event_sync_d     <= 1'b0;
+        keyboard_note_gate        <= 1'b0;
+      end else begin
+        keyboard_event_sync       <= {keyboard_event_sync[0], keyboard_note_event};
+        keyboard_down_sync        <= {keyboard_down_sync[0], keyboard_note_down};
+        keyboard_note_index_sync1 <= keyboard_note_index;
+        keyboard_note_index_sync2 <= keyboard_note_index_sync1;
+        keyboard_note_octave_sync1 <= keyboard_note_octave;
+        keyboard_note_octave_sync2 <= keyboard_note_octave_sync1;
+        keyboard_event_sync_d     <= keyboard_event_sync[1];
+        if (keyboard_event_audio)
+          keyboard_note_gate <= keyboard_down_sync[1];
+      end
+    end
+    assign keyboard_event_audio = keyboard_event_sync[1] && !keyboard_event_sync_d;
+    assign audio_note_index = keyboard_note_gate ? keyboard_note_index_sync2 : note_index;
+    assign audio_note_octave = keyboard_note_gate ? keyboard_note_octave_sync2 : 3'd3;
 //____________________________________________________________________________//
 
 //------------- Seven Segments Indicators                        -------------//
@@ -222,8 +269,8 @@ module audio_nexys_a7 (
     tone_generator tone_generator_inst (
       .clk         ( clk_audio   ),
       .rst_n       ( aud_rst_n   ),
-      .note_index  ( note_index  ),
-      .octave_sel  ( SW [2:0]    ),
+      .note_index  ( audio_note_index ),
+      .octave_sel  ( audio_note_octave),
       .sample      ( local_sample),
       .valid       ( valid       ),
       .ready       ( ready       )
@@ -239,7 +286,7 @@ module audio_nexys_a7 (
       .sample    ( midi_sample   )
     );
 
-    assign audio_play    = SW[15] ? midi_gate : play;
+    assign audio_play    = SW[15] ? midi_gate : (play || keyboard_note_gate);
     assign sample        = SW[15] ? midi_sample : local_sample;
     assign vol_mult      = sample * volume;
     assign sample_scaled = vol_mult [19:4];
