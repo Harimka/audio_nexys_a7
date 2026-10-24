@@ -8,46 +8,63 @@ module tb_vga_daw_ui;
     reg        rst_n = 1;
     reg [10:0] h_coord = 0;
     reg [9:0]  v_coord = 0;
+    reg [1:0]  waveform_select = 0;
+    reg [1:0]  selected_track = 0;
+    reg [3:0]  volume = 4'd12;
+    reg        audio_play = 0;
+    reg [3:0]  recording = 0;
+    reg [3:0]  playing = 0;
+    reg [27:0] event_counts = 0;
+    reg [19:0] preview_counts = 0;
+    reg [319:0] preview_notes = 0;
+    reg [447:0] roll_matrix = 0;
+    reg        active_note_valid = 0;
+    reg [2:0]  active_note = 0;
+    reg [1:0]  active_octave = 0;
+
     wire [3:0] red;
     wire [3:0] green;
     wire [3:0] blue;
     wire [11:0] color = {red, green, blue};
 
-    localparam [11:0] COLOR_BG      = 12'h002;
-    localparam [11:0] COLOR_BORDER  = 12'h0F4;
-    localparam [11:0] COLOR_CENTER  = 12'hF22;
-    localparam [11:0] COLOR_ORIGIN1 = 12'h0FF;
-    localparam [11:0] COLOR_ORIGIN2 = 12'hFA0;
-    localparam [11:0] COLOR_TEXT    = 12'hFFF;
+    localparam [11:0] COLOR_BG          = 12'hFEA;
+    localparam [11:0] COLOR_PANEL       = 12'hFFF;
+    localparam [11:0] COLOR_INK         = 12'h111;
+    localparam [11:0] COLOR_ACCENT      = 12'h06F;
+    localparam [11:0] COLOR_ALERT       = 12'hF33;
+    localparam [11:0] COLOR_PLAY        = 12'h094;
+    localparam [11:0] COLOR_C_ROOT      = 12'hEFF;
+    localparam [11:0] COLOR_SCOPE_BG    = 12'h012;
+    localparam [11:0] COLOR_SCOPE_TRACE = 12'h0F9;
 
     vga_daw_ui dut (
-        .pixel_clk          ( pixel_clk ),
-        .rst_n              ( rst_n     ),
-        .h_coord            ( h_coord   ),
-        .v_coord            ( v_coord   ),
-        .waveform_select    ( 2'b00     ),
-        .selected_track     ( 2'b00     ),
-        .volume             ( 4'd8      ),
-        .audio_play         ( 1'b0      ),
-        .recording          ( 4'd0      ),
-        .playing            ( 4'd0      ),
-        .event_counts       ( 28'd0     ),
-        .preview_counts     ( 20'd0     ),
-        .preview_notes      ( 320'd0    ),
-        .roll_matrix        ( 448'd0    ),
-        .active_note_valid  ( 1'b0      ),
-        .active_note        ( 3'd0      ),
-        .active_octave      ( 2'd0      ),
-        .red                ( red       ),
-        .green              ( green     ),
-        .blue               ( blue      )
+        .pixel_clk          ( pixel_clk          ),
+        .rst_n              ( rst_n              ),
+        .h_coord            ( h_coord            ),
+        .v_coord            ( v_coord            ),
+        .waveform_select    ( waveform_select    ),
+        .selected_track     ( selected_track     ),
+        .volume             ( volume             ),
+        .audio_play         ( audio_play         ),
+        .recording          ( recording          ),
+        .playing            ( playing            ),
+        .event_counts       ( event_counts       ),
+        .preview_counts     ( preview_counts     ),
+        .preview_notes      ( preview_notes      ),
+        .roll_matrix        ( roll_matrix        ),
+        .active_note_valid  ( active_note_valid  ),
+        .active_note        ( active_note        ),
+        .active_octave      ( active_octave      ),
+        .red                ( red                ),
+        .green              ( green              ),
+        .blue               ( blue               )
     );
 
     task check_pixel(input [10:0] x, input [9:0] y, input [11:0] expected_color, input [255:0] desc);
         begin
             h_coord = x;
             v_coord = y;
-            #1; // Combinational settling
+            #1;
             if (color !== expected_color) begin
                 $display("FAIL [%0s] at (%0d, %0d): expected 0x%03h, got 0x%03h", desc, x, y, expected_color, color);
                 $fatal(1);
@@ -59,116 +76,143 @@ module tb_vga_daw_ui;
 
     initial begin
         $display("=================================================");
-        $display("START VGA DAW UI TESTBENCH");
+        $display("START VGA DAW UI COMPLETE TESTBENCH");
         $display("=================================================");
 
         rst_n = 1;
+        waveform_select = 2'd0; // SINE
+        selected_track = 2'd0;  // Track 1
+        volume = 4'd12;
+        audio_play = 0;
+        recording = 4'd0;
+        playing = 4'd0;
+        event_counts = {7'd0, 7'd0, 7'd0, 7'd14}; // Track 1 has 14 events (0x0E)
 
-        // -----------------------------------------------------------------
-        // TEST 1: SCREEN BORDER VERIFICATION (800x600 edges)
-        // -----------------------------------------------------------------
+        // Set a test note at C3 (pitch 14, step 0) in roll_matrix
+        // roll_matrix bit index: pitch * 16 + step = 14 * 16 + 0 = 224
+        roll_matrix[224] = 1'b1;
+
+        #20;
+
+        // -------------------------------------------------------------
+        // TEST 1: SCREEN OUTER BORDER VERIFICATION (800x600 edges)
+        // -------------------------------------------------------------
         $display("\n--- Test 1: Screen edge borders ---");
-        // Four corners
-        check_pixel(11'd0,   10'd0,   COLOR_BORDER, "Top-Left corner (0,0)");
-        check_pixel(11'd1,   10'd1,   COLOR_BORDER, "Top-Left inner corner (1,1)");
-        check_pixel(11'd799, 10'd0,   COLOR_BORDER, "Top-Right corner (799,0)");
-        check_pixel(11'd798, 10'd1,   COLOR_BORDER, "Top-Right inner corner (798,1)");
-        check_pixel(11'd0,   10'd599, COLOR_BORDER, "Bottom-Left corner (0,599)");
-        check_pixel(11'd1,   10'd598, COLOR_BORDER, "Bottom-Left inner corner (1,598)");
-        check_pixel(11'd799, 10'd599, COLOR_BORDER, "Bottom-Right corner (799,599)");
-        check_pixel(11'd798, 10'd598, COLOR_BORDER, "Bottom-Right inner corner (798,598)");
+        check_pixel(11'd0,   10'd0,   COLOR_INK, "Top-Left corner (0,0)");
+        check_pixel(11'd799, 10'd0,   COLOR_INK, "Top-Right corner (799,0)");
+        check_pixel(11'd0,   10'd599, COLOR_INK, "Bottom-Left corner (0,599)");
+        check_pixel(11'd799, 10'd599, COLOR_INK, "Bottom-Right corner (799,599)");
 
-        // Edges at mid-screen
-        check_pixel(11'd0,   10'd200, COLOR_BORDER, "Left edge (0,200)");
-        check_pixel(11'd1,   10'd200, COLOR_BORDER, "Left edge (1,200)");
-        check_pixel(11'd799, 10'd200, COLOR_BORDER, "Right edge (799,200)");
-        check_pixel(11'd798, 10'd200, COLOR_BORDER, "Right edge (798,200)");
-        check_pixel(11'd200, 10'd0,   COLOR_BORDER, "Top edge (200,0)");
-        check_pixel(11'd200, 10'd1,   COLOR_BORDER, "Top edge (200,1)");
-        check_pixel(11'd200, 10'd599, COLOR_BORDER, "Bottom edge (200,599)");
-        check_pixel(11'd200, 10'd598, COLOR_BORDER, "Bottom edge (200,598)");
+        // -------------------------------------------------------------
+        // TEST 2: HEADER AND TRANSPORT BADGES
+        // -------------------------------------------------------------
+        $display("\n--- Test 2: Header and transport status ---");
+        // Status Badge default: IDLE (gray 0xDDD)
+        check_pixel(11'd660, 10'd20, 12'hDDD, "Status badge IDLE");
 
-        // Just inside border at (2,2) should NOT be border
-        h_coord = 11'd2;
-        v_coord = 10'd2;
-        #1;
-        if (color === COLOR_BORDER) begin
-            $fatal(1, "FAIL: pixel (2,2) must be inside the border!");
-        end else begin
-            $display("PASS: Pixel (2,2) is inside border, color = 0x%03h", color);
-        end
+        // When playing: status badge becomes GREEN (0x094)
+        playing = 4'b0001;
+        #2;
+        check_pixel(11'd660, 10'd20, COLOR_PLAY, "Status badge PLAY");
+        playing = 4'b0000;
 
-        // -----------------------------------------------------------------
-        // TEST 2: CENTER MARKER VERIFICATION (X=400, Y=300)
-        // -----------------------------------------------------------------
-        $display("\n--- Test 2: Center crosshair marker ---");
-        check_pixel(11'd400, 10'd300, COLOR_CENTER, "Center pixel (400,300)");
-        check_pixel(11'd399, 10'd299, COLOR_CENTER, "Center dot (399,299)");
-        check_pixel(11'd401, 10'd301, COLOR_CENTER, "Center dot (401,301)");
-        check_pixel(11'd400, 10'd280, COLOR_CENTER, "Center vertical crosshair arm (400,280)");
-        check_pixel(11'd380, 10'd300, COLOR_CENTER, "Center horizontal crosshair arm (380,300)");
-        check_pixel(11'd405, 10'd300, COLOR_CENTER, "Center target box edge (405,300)");
+        // -------------------------------------------------------------
+        // TEST 3: PIANO ROLL 28 NOTES SCALE AND NOTE BLOCKS
+        // -------------------------------------------------------------
+        $display("\n--- Test 3: Piano Roll 28 notes & cells ---");
+        // Check C1 row background (pitch 0, row 27 -> Y = 92 + 27*16 = 524): should be light blue C_ROOT
+        check_pixel(11'd100, 10'd528, COLOR_C_ROOT, "C1 row background tint");
 
-        // Non-center pixel
-        h_coord = 11'd350;
-        v_coord = 10'd300;
-        #1;
-        if (color === COLOR_CENTER) begin
-            $fatal(1, "FAIL: pixel (350,300) should be beyond center crosshair arm!");
-        end else begin
-            $display("PASS: Pixel (350,300) outside center arm, color = 0x%03h", color);
-        end
+        // Check our note at C3 (pitch 14, row = 27 - 14 = 13 -> Y = 92 + 13*16 = 300)
+        // Step 0: X = 68..95. Cell interior X = 72, Y = 304
+        check_pixel(11'd72, 10'd304, COLOR_ACCENT, "C3 Note cell active (72, 304)");
 
-        // -----------------------------------------------------------------
-        // TEST 3: TEXT 1X SCALE AND ANCHOR 1 VERIFICATION (X=100, Y=100)
-        // -----------------------------------------------------------------
-        $display("\n--- Test 3: Text 1X scale and Anchor 1 (100,100) ---");
-        // Anchor marker at (100,100)
-        check_pixel(11'd100, 10'd96,  COLOR_ORIGIN1, "Anchor 1 vertical tick (100,96)");
-        check_pixel(11'd96,  10'd100, COLOR_ORIGIN1, "Anchor 1 horizontal tick (96,100)");
+        // Non-active cell at Step 1: X = 68 + 28 + 4 = 100, Y = 304
+        // Pitch 14 is C3 (a C root row), so background is COLOR_C_ROOT
+        check_pixel(11'd100, 10'd304, COLOR_C_ROOT, "Empty C3 cell background");
 
-        // Line 5: "ORIGIN 1: (X=100, Y=100)"
-        // First character is 'O' from X=100 to X=107, Y=100 to Y=107.
-        // Glyph row 0 of 'O' is 8'b00111000:
-        // col 0 (X=100): 0
-        // col 1 (X=101): 0
-        // col 2 (X=102): 1 -> TEXT
-        // col 3 (X=103): 1 -> TEXT
-        // col 4 (X=104): 1 -> TEXT
-        // col 5 (X=105): 0
-        check_pixel(11'd102, 10'd100, COLOR_TEXT, "Letter 'O' row 0 col 2 (102,100)");
-        check_pixel(11'd103, 10'd100, COLOR_TEXT, "Letter 'O' row 0 col 3 (103,100)");
-        check_pixel(11'd104, 10'd100, COLOR_TEXT, "Letter 'O' row 0 col 4 (104,100)");
+        // -------------------------------------------------------------
+        // TEST 4: RED PLAYHEAD LINE AND 8-STEP WINDOW SHIFT
+        // -------------------------------------------------------------
+        $display("\n--- Test 4: Red Playhead line & window offset ---");
+        // Activate playback
+        audio_play = 1'b1;
+        @(posedge pixel_clk); #1;
 
-        // -----------------------------------------------------------------
-        // TEST 4: TEXT 2X SCALE AND ANCHOR 2 VERIFICATION (X=100, Y=180)
-        // -----------------------------------------------------------------
-        $display("\n--- Test 4: Text 2X scale and Anchor 2 (100,180) ---");
-        check_pixel(11'd100, 10'd176, COLOR_ORIGIN2, "Anchor 2 vertical tick (100,176)");
-        check_pixel(11'd96,  10'd180, COLOR_ORIGIN2, "Anchor 2 horizontal tick (96,180)");
+        // At step 0, playhead is at X = 68..69, Y = 70..539
+        check_pixel(11'd68, 10'd200, COLOR_ALERT, "Red Playhead line at Step 0 (X=68)");
+        check_pixel(11'd69, 10'd200, COLOR_ALERT, "Red Playhead line at Step 0 (X=69)");
 
-        // Line 8: "ORIGIN 2: (X=100, Y=180)" with 2X scale.
-        // First character 'O' spans X=100..115, Y=180..195.
-        // Glyph row 0 is scaled to Y=180, 181.
-        // col 2 is scaled to X=104, 105.
-        check_pixel(11'd104, 10'd180, COLOR_TEXT, "2X letter 'O' row 0 col 2 (104,180)");
-        check_pixel(11'd105, 10'd180, COLOR_TEXT, "2X letter 'O' row 0 col 2 (105,180)");
-        check_pixel(11'd104, 10'd181, COLOR_TEXT, "2X letter 'O' row 0 col 2 (104,181)");
-        check_pixel(11'd105, 10'd181, COLOR_TEXT, "2X letter 'O' row 0 col 2 (105,181)");
+        // Fast-forward playhead to step 16 to verify 8-step window shift
+        dut.playhead_step = 5'd16;
+        #2;
+        // Window offset should now be 8
+        if (dut.window_offset !== 5'd8)
+            $fatal(1, "FAIL: window_offset must be 8 at step 16!");
+        // Visible step should now be 16 - 8 = 8 (X = 68 + 8*28 = 292)
+        check_pixel(11'd292, 10'd200, COLOR_ALERT, "Red Playhead line shifted to Col 8 (X=292)");
 
-        // -----------------------------------------------------------------
-        // TEST 5: RESET STATE VERIFICATION
-        // -----------------------------------------------------------------
-        $display("\n--- Test 5: Reset state ---");
+        audio_play = 1'b0;
+        dut.playhead_step = 5'd0;
+        #2;
+
+        // -------------------------------------------------------------
+        // TEST 5: COMPACT WAVE SELECTOR & LIVE OSCILLOSCOPE
+        // -------------------------------------------------------------
+        $display("\n--- Test 5: Wave Selector and Oscilloscope ---");
+        // Wave selector: SINE button is selected (waveform_select=0) -> COLOR_ACCENT
+        check_pixel(11'd560, 10'd70, COLOR_ACCENT, "SINE button selected (active)");
+
+        // Switch to TRIANGLE (waveform_select=1)
+        waveform_select = 2'd1;
+        #2;
+        check_pixel(11'd560, 10'd70, COLOR_PANEL, "SINE button inactive");
+        check_pixel(11'd615, 10'd70, COLOR_ACCENT, "TRI button selected (active)");
+        waveform_select = 2'd0;
+
+        // Oscilloscope Screen:
+        // Background at (600, 240) should be dark scope CRT background
+        check_pixel(11'd600, 10'd240, COLOR_SCOPE_BG, "Scope dark CRT screen");
+        // Center zero axis at Y=210
+        check_pixel(11'd600, 10'd210, 12'h034, "Scope zero reticle grid axis");
+
+        // -------------------------------------------------------------
+        // TEST 6: 4-TRACK SEQUENCER MATRIX
+        // -------------------------------------------------------------
+        $display("\n--- Test 6: 4-Track matrix ---");
+        // Track 1 (t=0) is selected (selected_track=0) -> COLOR_ACCENT (0x06F)
+        // Row 0 is at Y = 344..365, X = 544..777
+        check_pixel(11'd546, 10'd350, COLOR_ACCENT, "Track 1 selected row highlight");
+
+        // Track 2 (t=1) is not selected -> COLOR_BG (0xFEA)
+        // Row 1 is at Y = 370..391
+        check_pixel(11'd546, 10'd375, COLOR_BG, "Track 2 unselected row background");
+
+        // -------------------------------------------------------------
+        // TEST 7: VOLUME VU METER BAR
+        // -------------------------------------------------------------
+        $display("\n--- Test 7: Volume VU meter bar ---");
+        // volume = 12 (segments 0..11 are active, 12..15 inactive)
+        // Segment 0: X = 552 + 0*14 + 4 = 556, Y = 512 -> COLOR_ACCENT
+        check_pixel(11'd556, 10'd512, COLOR_ACCENT, "Volume segment 0 active");
+        // Segment 14 (v=14 >= 12): X = 552 + 14*14 + 4 = 752, Y = 512 -> COLOR_PANEL
+        check_pixel(11'd752, 10'd512, COLOR_PANEL, "Volume segment 14 inactive");
+
+        // -------------------------------------------------------------
+        // TEST 8: RESET STATE
+        // -------------------------------------------------------------
+        $display("\n--- Test 8: Reset state ---");
         rst_n = 0;
-        check_pixel(11'd0,   10'd0,   12'h000, "Reset color at (0,0)");
-        check_pixel(11'd400, 10'd300, 12'h000, "Reset color at (400,300)");
-        check_pixel(11'd102, 10'd100, 12'h000, "Reset color at (102,100)");
+        #2;
+        check_pixel(11'd0,   10'd0,   12'h000, "Reset color 0 at (0,0)");
+        check_pixel(11'd72,  10'd304, 12'h000, "Reset color 0 at note cell");
+        check_pixel(11'd560, 10'd75,  12'h000, "Reset color 0 at wave button");
         rst_n = 1;
-        check_pixel(11'd0,   10'd0,   COLOR_BORDER, "Active border restored after reset release");
+        #2;
+        check_pixel(11'd0,   10'd0,   COLOR_INK, "Active border restored after reset release");
 
         $display("\n=================================================");
-        $display("ALL VGA DAW UI TESTS PASSED SUCCESSFULLY!");
+        $display("ALL 8 VGA DAW UI TESTS PASSED SUCCESSFULLY!");
         $display("=================================================");
         $finish;
     end

@@ -1,13 +1,14 @@
-// 800x600 VGA test pattern & layout verification module.
-// Renders:
-// 1. Precise 2-pixel border along screen edges (X: 0..799, Y: 0..599)
-// 2. Exact screen center marker (crosshair & target box at X=400, Y=300)
-// 3. Test text with visual anchor markers showing exact starting coordinates:
-//    - Scale 1X (8x8 px) starting at (X=100, Y=100)
-//    - Scale 2X (16x16 px) starting at (X=100, Y=180)
-//    - Corner coordinate tags at (0,0), (799,0), (0,599), (799,599)
-//    - Center tag at (400,300)
-//    - Subtle 100px reference grid
+// 800x600 FPGA DAW Workstation User Interface.
+// Implements:
+// 1. Warm retro light theme (12'hFEA bg, 12'hFFF cards, 12'h111 ink text, 12'h06F accent).
+// 2. 28-pitch Piano-Roll (C1..B4 across 4 full octaves, exactly 16 px per row).
+// 3. 16-step timeline with 8-step window shifting (steps 01..16 -> 09..24).
+// 4. Red Playhead line running across timeline and auto-shifting with window.
+// 5. Compact wave selector buttons (SINE, TRI, SQR, SAW).
+// 6. Large live audio oscilloscope with reticle grid and CRT screen.
+// 7. 4-Track sequencer matrix with live event counters (E:XX/40) and REC/PLAY status.
+// 8. 16-level volume meter bar.
+// 9. Footer with keyboard shortcut reference.
 module vga_daw_ui (
     input  wire        pixel_clk,
     input  wire        rst_n,
@@ -31,325 +32,821 @@ module vga_daw_ui (
     output reg  [3:0]  blue
 );
 
-    // RGB444 color palette
-    localparam [11:0] COLOR_BG      = 12'h002; // Deep dark navy
-    localparam [11:0] COLOR_BORDER  = 12'h0F4; // Neon green border
-    localparam [11:0] COLOR_CENTER  = 12'hF22; // Bright red crosshair & center
-    localparam [11:0] COLOR_ORIGIN1 = 12'h0FF; // Cyan origin marker (1X)
-    localparam [11:0] COLOR_ORIGIN2 = 12'hFA0; // Orange origin marker (2X)
-    localparam [11:0] COLOR_GRID    = 12'h114; // Subtle 100px dotted grid
-    localparam [11:0] COLOR_TEXT    = 12'hFFF; // Crisp white text
+    // RGB444 light palette definitions
+    localparam [11:0] COLOR_BG          = 12'hFEA; // Warm retro cream
+    localparam [11:0] COLOR_PANEL       = 12'hFFF; // Clean white card
+    localparam [11:0] COLOR_INK         = 12'h111; // Dark charcoal ink
+    localparam [11:0] COLOR_DIM         = 12'h777; // Muted gray text
+    localparam [11:0] COLOR_ACCENT      = 12'h06F; // Vivid DAW blue
+    localparam [11:0] COLOR_ALERT       = 12'hF33; // Bright red (REC & Playhead)
+    localparam [11:0] COLOR_PLAY        = 12'h094; // Forest green
+    localparam [11:0] COLOR_GRID        = 12'hDDC; // Light cream grid lines
+    localparam [11:0] COLOR_C_ROOT      = 12'hEFF; // Soft cyan tint for C root rows
+    localparam [11:0] COLOR_SCOPE_BG    = 12'h012; // Dark scope CRT background
+    localparam [11:0] COLOR_SCOPE_GRID  = 12'h034; // Faint cyan reticle grid
+    localparam [11:0] COLOR_SCOPE_TRACE = 12'h0F9; // Neon green/cyan trace
 
-    // Text engine signals
-    reg  [3:0] text_line_id;
-    reg  [5:0] char_index;
-    reg  [2:0] font_row;
-    reg  [2:0] font_col;
-    reg        in_text_area;
-    reg  [7:0] char_code;
-    wire [7:0] glyph_bits;
-    wire       text_pixel;
+    // Playhead and window shift timing (0.25 s per step @ 39.941 MHz)
+    localparam [23:0] STEP_TICKS = 24'd9_985_249;
+    reg [23:0] playhead_timer;
+    reg [4:0]  playhead_step; // 0..23 (supports up to 24 steps = 6s before wrap)
+    wire       playhead_active;
 
-    // Feature detection flags
-    reg is_border;
-    reg is_center_cross;
-    reg is_center_box;
-    reg is_center_dot;
-    reg is_origin1_marker;
-    reg is_origin1_guide;
-    reg is_origin2_marker;
-    reg is_origin2_guide;
-    reg is_grid_point;
+    assign playhead_active = (|recording) || (|playing) || audio_play;
 
-    reg [11:0] pixel_color;
+    always_ff @(posedge pixel_clk or negedge rst_n) begin
+        if (!rst_n) begin
+            playhead_timer <= 24'd0;
+            playhead_step  <= 5'd0;
+        end else if (playhead_active) begin
+            if (playhead_timer >= STEP_TICKS) begin
+                playhead_timer <= 24'd0;
+                if (playhead_step >= 5'd23)
+                    playhead_step <= 5'd0;
+                else
+                    playhead_step <= playhead_step + 1'b1;
+            end else begin
+                playhead_timer <= playhead_timer + 1'b1;
+            end
+        end else begin
+            playhead_timer <= 24'd0;
+            playhead_step  <= 5'd0;
+        end
+    end
 
-    // Text strings definition function
-    function automatic [7:0] get_char_code(input [3:0] line_id, input [5:0] idx);
+    // 8-step window shift logic:
+    // Steps 0..15 -> window_offset = 0 (displays steps 1..16)
+    // Steps 16..23 -> window_offset = 8 (displays steps 9..24)
+    wire [4:0] window_offset;
+    wire [3:0] visible_step;
+    wire [10:0] playhead_x;
+
+    assign window_offset = (playhead_step >= 5'd16) ? 5'd8 : 5'd0;
+    assign visible_step  = (playhead_step >= 5'd16) ? (playhead_step[3:0] - 4'd8) : playhead_step[3:0];
+    assign playhead_x    = 11'd68 + visible_step * 11'd28;
+
+    // REC blinking marker generator
+    reg [23:0] blink_timer;
+    reg        rec_blink;
+
+    always_ff @(posedge pixel_clk or negedge rst_n) begin
+        if (!rst_n) begin
+            blink_timer <= 24'd0;
+            rec_blink   <= 1'b0;
+        end else if (blink_timer >= 24'd9_999_999) begin
+            blink_timer <= 24'd0;
+            rec_blink   <= ~rec_blink;
+        end else begin
+            blink_timer <= blink_timer + 1'b1;
+        end
+    end
+
+    // Waveform generator for live oscilloscope
+    reg [10:0] wave_x_offset;
+    wire [7:0] wave_phase_addr;
+    wire [31:0] wave_phase;
+    wire [15:0] wave_sample;
+    wire signed [16:0] wave_centered;
+    integer wave_curve_y;
+
+    always_comb begin
+        wave_x_offset = (h_coord >= 11'd544 && h_coord < 11'd778) ? (h_coord - 11'd544) : 11'd0;
+    end
+
+    // Map 234 pixels to ~2 full cycles of the wave
+    assign wave_phase_addr = (wave_x_offset[7:0] << 1) + (wave_x_offset[7:0] >> 2);
+    assign wave_phase = {wave_phase_addr, 24'b0};
+
+    waveform_lookup wave_inst (
+        .phase           ( wave_phase      ),
+        .waveform_select ( waveform_select ),
+        .sample          ( wave_sample     )
+    );
+
+    assign wave_centered = $signed({1'b0, wave_sample}) - 17'sd32768;
+
+    always_comb begin
+        // Oscilloscope center line at Y=210, peak amplitude ~64 px
+        wave_curve_y = 210 - ($signed(wave_centered) >>> 9);
+    end
+
+    // Functions for text representation
+    function automatic [7:0] hex_digit(input [3:0] val);
         begin
-            case (line_id)
-                // Line 0: Top-left tag "(0, 0)"
-                4'd0: case (idx)
-                    0: get_char_code = "("; 1: get_char_code = "0"; 2: get_char_code = ",";
-                    3: get_char_code = " "; 4: get_char_code = "0"; 5: get_char_code = ")";
-                    default: get_char_code = " ";
-                endcase
+            hex_digit = (val < 4'd10) ? (8'h30 + val) : (8'h41 + val - 4'd10);
+        end
+    endfunction
 
-                // Line 1: Top-right tag "(799, 0)"
-                4'd1: case (idx)
-                    0: get_char_code = "("; 1: get_char_code = "7"; 2: get_char_code = "9"; 3: get_char_code = "9";
-                    4: get_char_code = ","; 5: get_char_code = " "; 6: get_char_code = "0"; 7: get_char_code = ")";
-                    default: get_char_code = " ";
-                endcase
+    function automatic [7:0] dec_digit(input [4:0] val);
+        begin
+            dec_digit = 8'h30 + (val % 10);
+        end
+    endfunction
 
-                // Line 2: Bottom-left tag "(0, 599)"
-                4'd2: case (idx)
-                    0: get_char_code = "("; 1: get_char_code = "0"; 2: get_char_code = ","; 3: get_char_code = " ";
-                    4: get_char_code = "5"; 5: get_char_code = "9"; 6: get_char_code = "9"; 7: get_char_code = ")";
-                    default: get_char_code = " ";
-                endcase
+    wire [6:0] trk0_count = event_counts[6:0];
+    wire [6:0] trk1_count = event_counts[13:7];
+    wire [6:0] trk2_count = event_counts[20:14];
+    wire [6:0] trk3_count = event_counts[27:21];
 
-                // Line 3: Bottom-right tag "(799, 599)"
-                4'd3: case (idx)
-                    0: get_char_code = "("; 1: get_char_code = "7"; 2: get_char_code = "9"; 3: get_char_code = "9";
-                    4: get_char_code = ","; 5: get_char_code = " "; 6: get_char_code = "5"; 7: get_char_code = "9";
-                    8: get_char_code = "9"; 9: get_char_code = ")";
-                    default: get_char_code = " ";
-                endcase
-
-                // Line 4: Center label "CENTER: (X=400, Y=300)"
-                4'd4: case (idx)
-                    0: get_char_code = "C"; 1: get_char_code = "E"; 2: get_char_code = "N"; 3: get_char_code = "T";
-                    4: get_char_code = "E"; 5: get_char_code = "R"; 6: get_char_code = ":"; 7: get_char_code = " ";
-                    8: get_char_code = "("; 9: get_char_code = "X"; 10: get_char_code = "="; 11: get_char_code = "4";
-                    12: get_char_code = "0"; 13: get_char_code = "0"; 14: get_char_code = ","; 15: get_char_code = " ";
-                    16: get_char_code = "Y"; 17: get_char_code = "="; 18: get_char_code = "3"; 19: get_char_code = "0";
-                    20: get_char_code = "0"; 21: get_char_code = ")";
-                    default: get_char_code = " ";
-                endcase
-
-                // Line 5: Origin 1 header "ORIGIN 1: (X=100, Y=100)"
-                4'd5: case (idx)
-                    0: get_char_code = "O"; 1: get_char_code = "R"; 2: get_char_code = "I"; 3: get_char_code = "G";
-                    4: get_char_code = "I"; 5: get_char_code = "N"; 6: get_char_code = " "; 7: get_char_code = "1";
-                    8: get_char_code = ":"; 9: get_char_code = " "; 10: get_char_code = "("; 11: get_char_code = "X";
-                    12: get_char_code = "="; 13: get_char_code = "1"; 14: get_char_code = "0"; 15: get_char_code = "0";
-                    16: get_char_code = ","; 17: get_char_code = " "; 18: get_char_code = "Y"; 19: get_char_code = "=";
-                    20: get_char_code = "1"; 21: get_char_code = "0"; 22: get_char_code = "0"; 23: get_char_code = ")";
-                    default: get_char_code = " ";
-                endcase
-
-                // Line 6: Scale 1X description "TEXT MODULE: 8X8 SCALE 1X"
-                4'd6: case (idx)
-                    0: get_char_code = "T"; 1: get_char_code = "E"; 2: get_char_code = "X"; 3: get_char_code = "T";
-                    4: get_char_code = " "; 5: get_char_code = "M"; 6: get_char_code = "O"; 7: get_char_code = "D";
-                    8: get_char_code = "U"; 9: get_char_code = "L"; 10: get_char_code = "E"; 11: get_char_code = ":";
-                    12: get_char_code = " "; 13: get_char_code = "8"; 14: get_char_code = "X"; 15: get_char_code = "8";
-                    16: get_char_code = " "; 17: get_char_code = "S"; 18: get_char_code = "C"; 19: get_char_code = "A";
-                    20: get_char_code = "L"; 21: get_char_code = "E"; 22: get_char_code = " "; 23: get_char_code = "1";
-                    24: get_char_code = "X";
-                    default: get_char_code = " ";
-                endcase
-
-                // Line 7: Charset verification "CHARSET: ABC 0123 !/:.,=-"
-                4'd7: case (idx)
-                    0: get_char_code = "C"; 1: get_char_code = "H"; 2: get_char_code = "A"; 3: get_char_code = "R";
-                    4: get_char_code = "S"; 5: get_char_code = "E"; 6: get_char_code = "T"; 7: get_char_code = ":";
-                    8: get_char_code = " "; 9: get_char_code = "A"; 10: get_char_code = "B"; 11: get_char_code = "C";
-                    12: get_char_code = " "; 13: get_char_code = "0"; 14: get_char_code = "1"; 15: get_char_code = "2";
-                    16: get_char_code = "3"; 17: get_char_code = " "; 18: get_char_code = "!"; 19: get_char_code = "/";
-                    20: get_char_code = ":"; 21: get_char_code = "."; 22: get_char_code = ","; 23: get_char_code = "=";
-                    24: get_char_code = "-";
-                    default: get_char_code = " ";
-                endcase
-
-                // Line 8: Origin 2 header (2X scale) "ORIGIN 2: (X=100, Y=180)"
-                4'd8: case (idx)
-                    0: get_char_code = "O"; 1: get_char_code = "R"; 2: get_char_code = "I"; 3: get_char_code = "G";
-                    4: get_char_code = "I"; 5: get_char_code = "N"; 6: get_char_code = " "; 7: get_char_code = "2";
-                    8: get_char_code = ":"; 9: get_char_code = " "; 10: get_char_code = "("; 11: get_char_code = "X";
-                    12: get_char_code = "="; 13: get_char_code = "1"; 14: get_char_code = "0"; 15: get_char_code = "0";
-                    16: get_char_code = ","; 17: get_char_code = " "; 18: get_char_code = "Y"; 19: get_char_code = "=";
-                    20: get_char_code = "1"; 21: get_char_code = "8"; 22: get_char_code = "0"; 23: get_char_code = ")";
-                    default: get_char_code = " ";
-                endcase
-
-                // Line 9: Scale 2X description "BIG TEXT: 16X16 SCALE 2X"
-                4'd9: case (idx)
-                    0: get_char_code = "B"; 1: get_char_code = "I"; 2: get_char_code = "G"; 3: get_char_code = " ";
-                    4: get_char_code = "T"; 5: get_char_code = "E"; 6: get_char_code = "X"; 7: get_char_code = "T";
-                    8: get_char_code = ":"; 9: get_char_code = " "; 10: get_char_code = "1"; 11: get_char_code = "6";
-                    12: get_char_code = "X"; 13: get_char_code = "1"; 14: get_char_code = "6"; 15: get_char_code = " ";
-                    16: get_char_code = "S"; 17: get_char_code = "C"; 18: get_char_code = "A"; 19: get_char_code = "L";
-                    20: get_char_code = "E"; 21: get_char_code = " "; 22: get_char_code = "2"; 23: get_char_code = "X";
-                    default: get_char_code = " ";
-                endcase
-
-                // Line 10: Bottom footer "VGA 800X600 COORDINATES TEST"
-                4'd10: case (idx)
-                    0: get_char_code = "V"; 1: get_char_code = "G"; 2: get_char_code = "A"; 3: get_char_code = " ";
-                    4: get_char_code = "8"; 5: get_char_code = "0"; 6: get_char_code = "0"; 7: get_char_code = "X";
-                    8: get_char_code = "6"; 9: get_char_code = "0"; 10: get_char_code = "0"; 11: get_char_code = " ";
-                    12: get_char_code = "C"; 13: get_char_code = "O"; 14: get_char_code = "O"; 15: get_char_code = "R";
-                    16: get_char_code = "D"; 17: get_char_code = "I"; 18: get_char_code = "N"; 19: get_char_code = "A";
-                    20: get_char_code = "T"; 21: get_char_code = "E"; 22: get_char_code = "S"; 23: get_char_code = " ";
-                    24: get_char_code = "T"; 25: get_char_code = "E"; 26: get_char_code = "S"; 27: get_char_code = "T";
-                    default: get_char_code = " ";
-                endcase
-
-                default: get_char_code = " ";
+    function automatic [6:0] track_evt_count(input [1:0] trk);
+        begin
+            case (trk)
+                2'd0: track_evt_count = trk0_count;
+                2'd1: track_evt_count = trk1_count;
+                2'd2: track_evt_count = trk2_count;
+                default: track_evt_count = trk3_count;
             endcase
         end
     endfunction
 
-    // Font ROM instance
-    font_rom text_font_rom (
+    function automatic [7:0] pitch_char(input [2:0] p);
+        begin
+            case (p)
+                3'd0: pitch_char = "C";
+                3'd1: pitch_char = "D";
+                3'd2: pitch_char = "E";
+                3'd3: pitch_char = "F";
+                3'd4: pitch_char = "G";
+                3'd5: pitch_char = "A";
+                default: pitch_char = "B";
+            endcase
+        end
+    endfunction
+
+    // Unified text engine signals
+    reg        in_text;
+    reg  [7:0] char_code;
+    reg  [2:0] char_row;
+    reg  [2:0] char_col;
+    reg [11:0] char_color;
+    wire [7:0] glyph_bits;
+    wire       text_pixel;
+
+    font_rom ui_font_rom (
         .char_code ( char_code  ),
-        .row       ( font_row   ),
+        .row       ( char_row   ),
         .bits      ( glyph_bits )
     );
 
-    assign text_pixel = in_text_area ? glyph_bits[3'd7 - font_col] : 1'b0;
+    assign text_pixel = in_text ? glyph_bits[3'd7 - char_col] : 1'b0;
 
-    // Text mapping and raster scanning logic
+    // Combinational text coordinate decoder
+    integer text_x, text_y;
+    reg [1:0]  track_row_id;
+    reg [6:0]  curr_track_count;
+    reg [4:0]  disp_step_num;
+    reg [4:0]  grid_pitch;
+    reg [2:0]  grid_note_idx;
+    reg [2:0]  grid_octave;
+
     always_comb begin
-        in_text_area = 1'b0;
-        text_line_id = 4'd15;
-        char_index   = 6'd0;
-        font_row     = 3'd0;
-        font_col     = 3'd0;
+        in_text     = 1'b0;
+        char_code   = 8'h20;
+        char_row    = 3'd0;
+        char_col    = 3'd0;
+        char_color  = COLOR_INK;
 
-        // Line 0: Top-left tag "(0, 0)" at X=8, Y=8 (len 6, width 48)
-        if (v_coord >= 10'd8 && v_coord < 10'd16 && h_coord >= 11'd8 && h_coord < 11'd56) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd0;
-            char_index   = (h_coord - 11'd8) >> 3;
-            font_row     = v_coord - 10'd8;
-            font_col     = (h_coord - 11'd8) & 3'b111;
+        // -------------------------------------------------------------
+        // 1. Header Text
+        // -------------------------------------------------------------
+        // Title: "NEXYS A7 // FPGA 4-TRACK DAW" (2X scale) at X=16, Y=12
+        if (v_coord >= 10'd12 && v_coord < 10'd28 && h_coord >= 11'd16 && h_coord < 11'd464) begin
+            in_text    = 1'b1;
+            char_row   = (v_coord - 10'd12) >> 1;
+            char_col   = ((h_coord - 11'd16) >> 1) & 3'b111;
+            char_color = COLOR_INK;
+            case ((h_coord - 11'd16) >> 4)
+                0: char_code = "N"; 1: char_code = "E"; 2: char_code = "X"; 3: char_code = "Y"; 4: char_code = "S";
+                5: char_code = " "; 6: char_code = "A"; 7: char_code = "7"; 8: char_code = " "; 9: char_code = "/";
+                10: char_code = "/"; 11: char_code = " "; 12: char_code = "F"; 13: char_code = "P"; 14: char_code = "G";
+                15: char_code = "A"; 16: char_code = " "; 17: char_code = "4"; 18: char_code = "-"; 19: char_code = "T";
+                20: char_code = "R"; 21: char_code = "A"; 22: char_code = "C"; 23: char_code = "K"; 24: char_code = " ";
+                25: char_code = "D"; 26: char_code = "A"; 27: char_code = "W";
+                default: char_code = " ";
+            endcase
         end
-        // Line 1: Top-right tag "(799, 0)" at X=728, Y=8 (len 8, width 64)
-        else if (v_coord >= 10'd8 && v_coord < 10'd16 && h_coord >= 11'd728 && h_coord < 11'd792) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd1;
-            char_index   = (h_coord - 11'd728) >> 3;
-            font_row     = v_coord - 10'd8;
-            font_col     = (h_coord - 11'd728) & 3'b111;
+        // "REC" text at X=594, Y=17 (1X)
+        else if (v_coord >= 10'd17 && v_coord < 10'd25 && h_coord >= 11'd594 && h_coord < 11'd618) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd17;
+            char_col   = (h_coord - 11'd594) & 3'b111;
+            char_color = COLOR_ALERT;
+            case ((h_coord - 11'd594) >> 3)
+                0: char_code = "R"; 1: char_code = "E"; 2: char_code = "C";
+                default: char_code = " ";
+            endcase
         end
-        // Line 2: Bottom-left tag "(0, 599)" at X=8, Y=584 (len 8, width 64)
-        else if (v_coord >= 10'd584 && v_coord < 10'd592 && h_coord >= 11'd8 && h_coord < 11'd72) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd2;
-            char_index   = (h_coord - 11'd8) >> 3;
-            font_row     = v_coord - 10'd584;
-            font_col     = (h_coord - 11'd8) & 3'b111;
+        // Status Badge at X=654, Y=15 (1X)
+        else if (v_coord >= 10'd15 && v_coord < 10'd23 && h_coord >= 11'd654 && h_coord < 11'd686) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd15;
+            char_col   = (h_coord - 11'd654) & 3'b111;
+            char_color = COLOR_PANEL; // White text on badge
+            if (|playing) begin
+                case ((h_coord - 11'd654) >> 3)
+                    0: char_code = "P"; 1: char_code = "L"; 2: char_code = "A"; 3: char_code = "Y";
+                    default: char_code = " ";
+                endcase
+            end else if (audio_play) begin
+                case ((h_coord - 11'd654) >> 3)
+                    0: char_code = "L"; 1: char_code = "I"; 2: char_code = "V"; 3: char_code = "E";
+                    default: char_code = " ";
+                endcase
+            end else begin
+                case ((h_coord - 11'd654) >> 3)
+                    0: char_code = "I"; 1: char_code = "D"; 2: char_code = "L"; 3: char_code = "E";
+                    default: char_code = " ";
+                endcase
+            end
         end
-        // Line 3: Bottom-right tag "(799, 599)" at X=712, Y=584 (len 10, width 80)
-        else if (v_coord >= 10'd584 && v_coord < 10'd592 && h_coord >= 11'd712 && h_coord < 11'd792) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd3;
-            char_index   = (h_coord - 11'd712) >> 3;
-            font_row     = v_coord - 10'd584;
-            font_col     = (h_coord - 11'd712) & 3'b111;
-        end
-        // Line 4: Center tag "CENTER: (X=400, Y=300)" at X=316, Y=340 (len 22, width 176)
-        else if (v_coord >= 10'd340 && v_coord < 10'd348 && h_coord >= 11'd316 && h_coord < 11'd492) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd4;
-            char_index   = (h_coord - 11'd316) >> 3;
-            font_row     = v_coord - 10'd340;
-            font_col     = (h_coord - 11'd316) & 3'b111;
-        end
-        // Line 5: Origin 1 header "ORIGIN 1: (X=100, Y=100)" at X=100, Y=100 (len 24, width 192)
-        else if (v_coord >= 10'd100 && v_coord < 10'd108 && h_coord >= 11'd100 && h_coord < 11'd292) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd5;
-            char_index   = (h_coord - 11'd100) >> 3;
-            font_row     = v_coord - 10'd100;
-            font_col     = (h_coord - 11'd100) & 3'b111;
-        end
-        // Line 6: "TEXT MODULE: 8X8 SCALE 1X" at X=100, Y=116 (len 25, width 200)
-        else if (v_coord >= 10'd116 && v_coord < 10'd124 && h_coord >= 11'd100 && h_coord < 11'd300) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd6;
-            char_index   = (h_coord - 11'd100) >> 3;
-            font_row     = v_coord - 10'd116;
-            font_col     = (h_coord - 11'd100) & 3'b111;
-        end
-        // Line 7: "CHARSET: ABC 0123 !/:.,=-" at X=100, Y=132 (len 25, width 200)
-        else if (v_coord >= 10'd132 && v_coord < 10'd140 && h_coord >= 11'd100 && h_coord < 11'd300) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd7;
-            char_index   = (h_coord - 11'd100) >> 3;
-            font_row     = v_coord - 10'd132;
-            font_col     = (h_coord - 11'd100) & 3'b111;
-        end
-        // Line 8: Scale 2X (16x16 px) "ORIGIN 2: (X=100, Y=180)" at X=100, Y=180 (len 24, width 384, height 16)
-        else if (v_coord >= 10'd180 && v_coord < 10'd196 && h_coord >= 11'd100 && h_coord < 11'd484) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd8;
-            char_index   = (h_coord - 11'd100) >> 4;
-            font_row     = (v_coord - 10'd180) >> 1;
-            font_col     = ((h_coord - 11'd100) >> 1) & 3'b111;
-        end
-        // Line 9: Scale 2X "BIG TEXT: 16X16 SCALE 2X" at X=100, Y=204 (len 24, width 384, height 16)
-        else if (v_coord >= 10'd204 && v_coord < 10'd220 && h_coord >= 11'd100 && h_coord < 11'd484) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd9;
-            char_index   = (h_coord - 11'd100) >> 4;
-            font_row     = (v_coord - 10'd204) >> 1;
-            font_col     = ((h_coord - 11'd100) >> 1) & 3'b111;
-        end
-        // Line 10: Footer tag at X=288, Y=550 (len 28, width 224)
-        else if (v_coord >= 10'd550 && v_coord < 10'd558 && h_coord >= 11'd288 && h_coord < 11'd512) begin
-            in_text_area = 1'b1;
-            text_line_id = 4'd10;
-            char_index   = (h_coord - 11'd288) >> 3;
-            font_row     = v_coord - 10'd550;
-            font_col     = (h_coord - 11'd288) & 3'b111;
+        // "TRK: 1" at X=720, Y=17 (1X)
+        else if (v_coord >= 10'd17 && v_coord < 10'd25 && h_coord >= 11'd720 && h_coord < 11'd768) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd17;
+            char_col   = (h_coord - 11'd720) & 3'b111;
+            char_color = COLOR_INK;
+            case ((h_coord - 11'd720) >> 3)
+                0: char_code = "T"; 1: char_code = "R"; 2: char_code = "K"; 3: char_code = ":";
+                4: char_code = " "; 5: char_code = 8'h31 + selected_track;
+                default: char_code = " ";
+            endcase
         end
 
-        char_code = get_char_code(text_line_id, char_index);
+        // -------------------------------------------------------------
+        // 2. Piano Roll Header & Timeline
+        // -------------------------------------------------------------
+        // Title at X=22, Y=51 (1X)
+        else if (v_coord >= 10'd51 && v_coord < 10'd59 && h_coord >= 11'd22 && h_coord < 11'd366) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd51;
+            char_col   = (h_coord - 11'd22) & 3'b111;
+            char_color = COLOR_INK;
+            // Title shows active window offset (01..16 or 09..24)
+            case ((h_coord - 11'd22) >> 3)
+                0: char_code = "P"; 1: char_code = "I"; 2: char_code = "A"; 3: char_code = "N"; 4: char_code = "O";
+                5: char_code = " "; 6: char_code = "R"; 7: char_code = "O"; 8: char_code = "L"; 9: char_code = "L";
+                10: char_code = " "; 11: char_code = "("; 12: char_code = "S"; 13: char_code = "T"; 14: char_code = "E";
+                15: char_code = "P"; 16: char_code = "S"; 17: char_code = " ";
+                18: char_code = (window_offset == 0) ? "0" : "0";
+                19: char_code = (window_offset == 0) ? "1" : "9";
+                20: char_code = "."; 21: char_code = ".";
+                22: char_code = (window_offset == 0) ? "1" : "2";
+                23: char_code = (window_offset == 0) ? "6" : "4";
+                24: char_code = " "; 25: char_code = "/"; 26: char_code = " "; 27: char_code = "4"; 28: char_code = " ";
+                29: char_code = "O"; 30: char_code = "C"; 31: char_code = "T"; 32: char_code = " "; 33: char_code = "C";
+                34: char_code = "1"; 35: char_code = "."; 36: char_code = "."; 37: char_code = "B"; 38: char_code = "4";
+                39: char_code = ")";
+                default: char_code = " ";
+            endcase
+        end
+        // Timeline 16 step numbers at Y=72..79, X=74 + s*28
+        else if (v_coord >= 10'd72 && v_coord < 10'd80 && h_coord >= 11'd68 && h_coord < 11'd516) begin
+            text_x = (h_coord - 11'd68) % 28;
+            if (text_x >= 6 && text_x < 22) begin
+                in_text    = 1'b1;
+                char_row   = v_coord - 10'd72;
+                char_col   = (text_x - 6) & 3'b111;
+                disp_step_num = window_offset + ((h_coord - 11'd68) / 28) + 1;
+                char_color = (((h_coord - 11'd68) / 28) % 4 == 0) ? COLOR_ACCENT : COLOR_DIM;
+                if ((text_x - 6) < 8)
+                    char_code = (disp_step_num >= 20) ? "2" : ((disp_step_num >= 10) ? "1" : "0");
+                else
+                    char_code = dec_digit(disp_step_num);
+            end
+        end
+
+        // -------------------------------------------------------------
+        // 3. Piano Roll 28 Key Labels (C1..B4)
+        // -------------------------------------------------------------
+        // Rows: Y=92..539, 28 rows x 16 px. Key tags at X=26..42
+        else if (v_coord >= 10'd92 && v_coord < 10'd540 && h_coord >= 11'd26 && h_coord < 11'd50) begin
+            text_y = (v_coord - 10'd92) % 16;
+            if (text_y >= 4 && text_y < 12) begin
+                in_text    = 1'b1;
+                char_row   = text_y - 4;
+                char_col   = (h_coord - 11'd26) & 3'b111;
+                grid_pitch = 5'd27 - ((v_coord - 10'd92) >> 4); // 0=C1, 27=B4
+                grid_note_idx = grid_pitch % 7;
+                grid_octave   = grid_pitch / 7 + 1;
+                char_color = (grid_note_idx == 0) ? COLOR_PANEL : COLOR_INK; // White text on blue for C
+                if (h_coord < 11'd34)
+                    char_code = pitch_char(grid_note_idx);
+                else if (h_coord >= 11'd42 && h_coord < 11'd50)
+                    char_code = 8'h30 + grid_octave;
+                else
+                    char_code = " ";
+            end
+        end
+
+        // -------------------------------------------------------------
+        // 4. Wave Selector (Compact)
+        // -------------------------------------------------------------
+        // Title at X=544, Y=51 (1X)
+        else if (v_coord >= 10'd51 && v_coord < 10'd59 && h_coord >= 11'd544 && h_coord < 11'd632) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd51;
+            char_col   = (h_coord - 11'd544) & 3'b111;
+            char_color = COLOR_INK;
+            case ((h_coord - 11'd544) >> 3)
+                0: char_code = "W"; 1: char_code = "A"; 2: char_code = "V"; 3: char_code = "E";
+                4: char_code = " "; 5: char_code = "S"; 6: char_code = "E"; 7: char_code = "L";
+                8: char_code = "E"; 9: char_code = "C"; 10: char_code = "T";
+                default: char_code = " ";
+            endcase
+        end
+        // 4 Button labels at Y=72..79
+        else if (v_coord >= 10'd72 && v_coord < 10'd80 && h_coord >= 11'd542 && h_coord < 11'd778) begin
+            text_x = (h_coord - 11'd542) % 59;
+            if (text_x >= 11 && text_x < 43) begin
+                in_text    = 1'b1;
+                char_row   = v_coord - 10'd72;
+                char_col   = (text_x - 11) & 3'b111;
+                char_color = (((h_coord - 11'd542) / 59) == waveform_select) ? COLOR_PANEL : COLOR_INK;
+                case ((h_coord - 11'd542) / 59)
+                    0: case ((text_x - 11) >> 3) 0: char_code="S"; 1: char_code="I"; 2: char_code="N"; 3: char_code="E"; default: char_code=" "; endcase
+                    1: case ((text_x - 11) >> 3) 0: char_code="T"; 1: char_code="R"; 2: char_code="I"; 3: char_code=" "; default: char_code=" "; endcase
+                    2: case ((text_x - 11) >> 3) 0: char_code="S"; 1: char_code="Q"; 2: char_code="R"; 3: char_code=" "; default: char_code=" "; endcase
+                    default: case ((text_x - 11) >> 3) 0: char_code="S"; 1: char_code="A"; 2: char_code="W"; 3: char_code=" "; default: char_code=" "; endcase
+                endcase
+            end
+        end
+
+        // -------------------------------------------------------------
+        // 5. Live Oscilloscope
+        // -------------------------------------------------------------
+        // Title at X=544, Y=99 (1X)
+        else if (v_coord >= 10'd99 && v_coord < 10'd107 && h_coord >= 11'd544 && h_coord < 11'd728) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd99;
+            char_col   = (h_coord - 11'd544) & 3'b111;
+            char_color = COLOR_INK;
+            case ((h_coord - 11'd544) >> 3)
+                0: char_code = "L"; 1: char_code = "I"; 2: char_code = "V"; 3: char_code = "E"; 4: char_code = " ";
+                5: char_code = "O"; 6: char_code = "S"; 7: char_code = "C"; 8: char_code = "I"; 9: char_code = "L";
+                10: char_code = "L"; 11: char_code = "O"; 12: char_code = "S"; 13: char_code = "C"; 14: char_code = "O";
+                15: char_code = "P"; 16: char_code = "E";
+                default: char_code = " ";
+            endcase
+        end
+        // Scope status: "VOICES: 1/8" at X=552, Y=122
+        else if (v_coord >= 10'd122 && v_coord < 10'd130 && h_coord >= 11'd552 && h_coord < 11'd640) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd122;
+            char_col   = (h_coord - 11'd552) & 3'b111;
+            char_color = COLOR_SCOPE_TRACE;
+            case ((h_coord - 11'd552) >> 3)
+                0: char_code = "V"; 1: char_code = "O"; 2: char_code = "I"; 3: char_code = "C"; 4: char_code = "E";
+                5: char_code = "S"; 6: char_code = ":"; 7: char_code = " ";
+                8: char_code = audio_play ? "1" : "0"; 9: char_code = "/"; 10: char_code = "8";
+                default: char_code = " ";
+            endcase
+        end
+        // Scope status: "TRIG: AUTO" at X=700, Y=122
+        else if (v_coord >= 10'd122 && v_coord < 10'd130 && h_coord >= 11'd700 && h_coord < 11'd780) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd122;
+            char_col   = (h_coord - 11'd700) & 3'b111;
+            char_color = COLOR_DIM;
+            case ((h_coord - 11'd700) >> 3)
+                0: char_code = "T"; 1: char_code = "R"; 2: char_code = "I"; 3: char_code = "G";
+                4: char_code = ":"; 5: char_code = " "; 6: char_code = "A"; 7: char_code = "U";
+                8: char_code = "T"; 9: char_code = "O";
+                default: char_code = " ";
+            endcase
+        end
+
+        // -------------------------------------------------------------
+        // 6. 4-Track Sequencer Matrix
+        // -------------------------------------------------------------
+        // Title at X=544, Y=323 (1X)
+        else if (v_coord >= 10'd323 && v_coord < 10'd331 && h_coord >= 11'd544 && h_coord < 11'd776) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd323;
+            char_col   = (h_coord - 11'd544) & 3'b111;
+            char_color = COLOR_INK;
+            case ((h_coord - 11'd544) >> 3)
+                0: char_code = "T"; 1: char_code = "R"; 2: char_code = "A"; 3: char_code = "C"; 4: char_code = "K";
+                5: char_code = " "; 6: char_code = "S"; 7: char_code = "E"; 8: char_code = "Q"; 9: char_code = "U";
+                10: char_code = "E"; 11: char_code = "N"; 12: char_code = "C"; 13: char_code = "E"; 14: char_code = "R";
+                15: char_code = " "; 16: char_code = "("; 17: char_code = "4"; 18: char_code = "C"; 19: char_code = "H";
+                20: char_code = "/"; 21: char_code = "6"; 22: char_code = "4"; 23: char_code = "E"; 24: char_code = "V";
+                25: char_code = "T"; 26: char_code = ")";
+                default: char_code = " ";
+            endcase
+        end
+        // 4 Tracks rows at Y=344 + t*26
+        else if (v_coord >= 10'd344 && v_coord < 10'd448 && h_coord >= 11'd552 && h_coord < 11'd768) begin
+            track_row_id     = (v_coord - 10'd344) / 26;
+            text_y           = (v_coord - 10'd344) % 26;
+            curr_track_count = track_evt_count(track_row_id);
+            if (text_y >= 7 && text_y < 15) begin
+                in_text    = 1'b1;
+                char_row   = text_y - 7;
+                char_col   = (h_coord - 11'd552) & 3'b111;
+                char_color = (track_row_id == selected_track) ? COLOR_PANEL : COLOR_INK;
+
+                // "TRK 1" at X=552..591
+                if (h_coord < 11'd600) begin
+                    case ((h_coord - 11'd552) >> 3)
+                        0: char_code = "T"; 1: char_code = "R"; 2: char_code = "K"; 3: char_code = " ";
+                        4: char_code = 8'h31 + track_row_id;
+                        default: char_code = " ";
+                    endcase
+                end
+                // "REC" at X=610..633
+                else if (h_coord >= 11'd610 && h_coord < 11'd634) begin
+                    if (recording[track_row_id]) begin
+                        char_color = (track_row_id == selected_track) ? COLOR_PANEL : COLOR_ALERT;
+                        case ((h_coord - 11'd610) >> 3)
+                            0: char_code = "R"; 1: char_code = "E"; 2: char_code = "C"; default: char_code = " ";
+                        endcase
+                    end else begin
+                        char_color = (track_row_id == selected_track) ? COLOR_PANEL : COLOR_DIM;
+                        case ((h_coord - 11'd610) >> 3)
+                            0: char_code = "-"; 1: char_code = "-"; 2: char_code = "-"; default: char_code = " ";
+                        endcase
+                    end
+                end
+                // "PLAY" at X=650..681
+                else if (h_coord >= 11'd650 && h_coord < 11'd682) begin
+                    if (playing[track_row_id]) begin
+                        char_color = (track_row_id == selected_track) ? COLOR_PANEL : COLOR_PLAY;
+                        case ((h_coord - 11'd650) >> 3)
+                            0: char_code = "P"; 1: char_code = "L"; 2: char_code = "A"; 3: char_code = "Y"; default: char_code = " ";
+                        endcase
+                    end else begin
+                        char_color = (track_row_id == selected_track) ? COLOR_PANEL : COLOR_DIM;
+                        case ((h_coord - 11'd650) >> 3)
+                            0: char_code = "-"; 1: char_code = "-"; 2: char_code = "-"; 3: char_code = "-"; default: char_code = " ";
+                        endcase
+                    end
+                end
+                // "E:XX/40" at X=700..755
+                else if (h_coord >= 11'd700 && h_coord < 11'd756) begin
+                    case ((h_coord - 11'd700) >> 3)
+                        0: char_code = "E"; 1: char_code = ":";
+                        2: char_code = hex_digit((curr_track_count >> 4) & 4'hF);
+                        3: char_code = hex_digit(curr_track_count & 4'hF);
+                        4: char_code = "/"; 5: char_code = "4"; 6: char_code = "0";
+                        default: char_code = " ";
+                    endcase
+                end
+            end
+        end
+
+        // -------------------------------------------------------------
+        // 7. Volume Level
+        // -------------------------------------------------------------
+        // Title at X=544, Y=473 (1X)
+        else if (v_coord >= 10'd473 && v_coord < 10'd481 && h_coord >= 11'd544 && h_coord < 11'd760) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd473;
+            char_col   = (h_coord - 11'd544) & 3'b111;
+            char_color = COLOR_INK;
+            case ((h_coord - 11'd544) >> 3)
+                0: char_code = "V"; 1: char_code = "O"; 2: char_code = "L"; 3: char_code = "U"; 4: char_code = "M";
+                5: char_code = "E"; 6: char_code = " "; 7: char_code = "L"; 8: char_code = "E"; 9: char_code = "V";
+                10: char_code = "E"; 11: char_code = "L"; 12: char_code = " "; 13: char_code = "("; 14: char_code = "0";
+                15: char_code = "."; 16: char_code = "."; 17: char_code = "1"; 18: char_code = "5"; 19: char_code = ")";
+                default: char_code = " ";
+            endcase
+        end
+        // "VOL: 12 / 15" at X=552, Y=492
+        else if (v_coord >= 10'd492 && v_coord < 10'd500 && h_coord >= 11'd552 && h_coord < 11'd648) begin
+            in_text    = 1'b1;
+            char_row   = v_coord - 10'd492;
+            char_col   = (h_coord - 11'd552) & 3'b111;
+            char_color = COLOR_INK;
+            case ((h_coord - 11'd552) >> 3)
+                0: char_code = "V"; 1: char_code = "O"; 2: char_code = "L"; 3: char_code = ":"; 4: char_code = " ";
+                5: char_code = (volume >= 4'd10) ? "1" : "0";
+                6: char_code = dec_digit({1'b0, volume});
+                7: char_code = " "; 8: char_code = "/"; 9: char_code = " "; 10: char_code = "1"; 11: char_code = "5";
+                default: char_code = " ";
+            endcase
+        end
+
+        // -------------------------------------------------------------
+        // 8. Footer Keybinding Hints
+        // -------------------------------------------------------------
+        // Footer bar text at Y=572..579
+        else if (v_coord >= 10'd572 && v_coord < 10'd580 && h_coord >= 11'd20 && h_coord < 11'd780) begin
+            in_text  = 1'b1;
+            char_row = v_coord - 10'd572;
+            char_col = (h_coord - 11'd20) & 3'b111;
+
+            // "F9/SPACE REC" at X=20..115
+            if (h_coord < 11'd120) begin
+                char_color = COLOR_ALERT;
+                case ((h_coord - 11'd20) >> 3)
+                    0: char_code = "F"; 1: char_code = "9"; 2: char_code = "/"; 3: char_code = "S"; 4: char_code = "P";
+                    5: char_code = "A"; 6: char_code = "C"; 7: char_code = "E"; 8: char_code = " "; 9: char_code = "R";
+                    10: char_code = "E"; 11: char_code = "C";
+                    default: char_code = " ";
+                endcase
+            end
+            // "ENTER PLAY" at X=150..229
+            else if (h_coord >= 11'd150 && h_coord < 11'd230) begin
+                char_color = COLOR_PLAY;
+                case ((h_coord - 11'd150) >> 3)
+                    0: char_code = "E"; 1: char_code = "N"; 2: char_code = "T"; 3: char_code = "E"; 4: char_code = "R";
+                    5: char_code = " "; 6: char_code = "P"; 7: char_code = "L"; 8: char_code = "A"; 9: char_code = "Y";
+                    default: char_code = " ";
+                endcase
+            end
+            // "ESC STOP" at X=260..323
+            else if (h_coord >= 11'd260 && h_coord < 11'd324) begin
+                char_color = COLOR_INK;
+                case ((h_coord - 11'd260) >> 3)
+                    0: char_code = "E"; 1: char_code = "S"; 2: char_code = "C"; 3: char_code = " ";
+                    4: char_code = "S"; 5: char_code = "T"; 6: char_code = "O"; 7: char_code = "P";
+                    default: char_code = " ";
+                endcase
+            end
+            // "TAB/BS TRACK" at X=355..450
+            else if (h_coord >= 11'd355 && h_coord < 11'd451) begin
+                char_color = COLOR_INK;
+                case ((h_coord - 11'd355) >> 3)
+                    0: char_code = "T"; 1: char_code = "A"; 2: char_code = "B"; 3: char_code = "/"; 4: char_code = "B";
+                    5: char_code = "S"; 6: char_code = " "; 7: char_code = "T"; 8: char_code = "R"; 9: char_code = "A";
+                    10: char_code = "C"; 11: char_code = "K";
+                    default: char_code = " ";
+                endcase
+            end
+            // "ARROWS WAVE" at X=480..567
+            else if (h_coord >= 11'd480 && h_coord < 11'd568) begin
+                char_color = COLOR_INK;
+                case ((h_coord - 11'd480) >> 3)
+                    0: char_code = "A"; 1: char_code = "R"; 2: char_code = "R"; 3: char_code = "O"; 4: char_code = "W";
+                    5: char_code = "S"; 6: char_code = " "; 7: char_code = "W"; 8: char_code = "A"; 9: char_code = "V";
+                    10: char_code = "E";
+                    default: char_code = " ";
+                endcase
+            end
+            // "NEXYS A7 FPGA" at X=670..773
+            else if (h_coord >= 11'd670 && h_coord < 11'd774) begin
+                char_color = COLOR_ACCENT;
+                case ((h_coord - 11'd670) >> 3)
+                    0: char_code = "N"; 1: char_code = "E"; 2: char_code = "X"; 3: char_code = "Y"; 4: char_code = "S";
+                    5: char_code = " "; 6: char_code = "A"; 7: char_code = "7"; 8: char_code = " "; 9: char_code = "F";
+                    10: char_code = "P"; 11: char_code = "G"; 12: char_code = "A";
+                    default: char_code = " ";
+                endcase
+            end
+        end
     end
 
-    // Geometry markers and pixel compositor
+    // Visual geometry and raster pixel compositing
+    reg [11:0] pixel_color;
+
+    // Intermediate geometry flags
+    reg is_screen_border;
+    reg is_card_panel;
+    reg is_card_border;
+    reg is_piano_grid_h;
+    reg is_piano_grid_v;
+    reg is_piano_c_root;
+    reg is_piano_key_tag;
+    reg is_piano_note_cell;
+    reg is_playhead_line;
+    reg is_rec_indicator;
+    reg is_status_badge;
+    reg is_wave_btn;
+    reg is_scope_screen;
+    reg is_scope_grid;
+    reg is_scope_trace;
+    reg is_track_row_active;
+    reg is_track_row_box;
+    reg is_vol_seg_active;
+    reg is_vol_seg_border;
+
+    integer r_idx, s_idx, v_idx;
+    reg [4:0] roll_pitch;
+    reg [3:0] roll_step;
+
     always_comb begin
-        // 1. Screen edge 2-pixel border
-        is_border = (h_coord <= 11'd1 || h_coord >= 11'd798 || v_coord <= 10'd1 || v_coord >= 10'd598);
+        // 1. Outer screen 2px border
+        is_screen_border = (h_coord <= 11'd1 || h_coord >= 11'd798 || v_coord <= 10'd1 || v_coord >= 10'd598);
 
-        // 2. Center marker at X=400, Y=300
-        // Crosshair: horizontal line (X: 370..430, Y=300), vertical line (X=400, Y: 270..330)
-        is_center_cross = (v_coord == 10'd300 && h_coord >= 11'd370 && h_coord <= 11'd430) ||
-                          (h_coord == 11'd400 && v_coord >= 10'd270 && v_coord <= 10'd330);
-        // Target box 11x11 around center
-        is_center_box   = ((h_coord == 11'd395 || h_coord == 11'd405) && v_coord >= 10'd295 && v_coord <= 10'd305) ||
-                          ((v_coord == 10'd295 || v_coord == 10'd305) && h_coord >= 11'd395 && h_coord <= 11'd405);
-        // 3x3 solid center dot
-        is_center_dot   = (h_coord >= 11'd399 && h_coord <= 11'd401 && v_coord >= 10'd299 && v_coord <= 10'd301);
+        // 2. Card Panel backgrounds & borders
+        is_card_panel = 1'b0;
+        is_card_border = 1'b0;
 
-        // 3. Anchor 1 marker at (X=100, Y=100)
-        is_origin1_marker = ((h_coord >= 11'd96 && h_coord <= 11'd104 && v_coord == 10'd100) ||
-                             (v_coord >= 10'd96 && v_coord <= 10'd104 && h_coord == 11'd100) ||
-                             (h_coord >= 11'd98 && h_coord <= 11'd102 && (v_coord == 10'd98 || v_coord == 10'd102)) ||
-                             (v_coord >= 10'd98 && v_coord <= 10'd102 && (h_coord == 11'd98 || h_coord == 11'd102)));
-        // Dotted guide lines extending from (100, 100)
-        is_origin1_guide  = ((h_coord == 11'd100 && v_coord >= 10'd80 && v_coord <= 10'd160 && (v_coord & 10'd4) == 0) ||
-                             (v_coord == 10'd100 && h_coord >= 11'd60 && h_coord <= 11'd320 && (h_coord & 11'd4) == 0));
+        // Header card (Y: 2..39)
+        if (v_coord >= 10'd2 && v_coord < 10'd40 && h_coord >= 11'd2 && h_coord < 11'd798) begin
+            is_card_panel = 1'b1;
+            if (v_coord == 10'd39) is_card_border = 1'b1;
+        end
+        // Piano Roll card (X: 14..524, Y: 46..544)
+        else if (v_coord >= 10'd46 && v_coord < 10'd545 && h_coord >= 11'd14 && h_coord < 11'd525) begin
+            is_card_panel = 1'b1;
+            if (h_coord == 11'd14 || h_coord == 11'd524 || v_coord == 10'd46 || v_coord == 10'd544 || v_coord == 10'd64)
+                is_card_border = 1'b1;
+        end
+        // Wave Select card (X: 536..786, Y: 46..88)
+        else if (v_coord >= 10'd46 && v_coord < 10'd89 && h_coord >= 11'd536 && h_coord < 11'd787) begin
+            is_card_panel = 1'b1;
+            if (h_coord == 11'd536 || h_coord == 11'd786 || v_coord == 10'd46 || v_coord == 10'd88 || v_coord == 10'd64)
+                is_card_border = 1'b1;
+        end
+        // Oscilloscope card (X: 536..786, Y: 94..312)
+        else if (v_coord >= 10'd94 && v_coord < 10'd313 && h_coord >= 11'd536 && h_coord < 11'd787) begin
+            is_card_panel = 1'b1;
+            if (h_coord == 11'd536 || h_coord == 11'd786 || v_coord == 10'd94 || v_coord == 10'd312 || v_coord == 10'd112)
+                is_card_border = 1'b1;
+        end
+        // Track Sequencer card (X: 536..786, Y: 318..460)
+        else if (v_coord >= 10'd318 && v_coord < 10'd461 && h_coord >= 11'd536 && h_coord < 11'd787) begin
+            is_card_panel = 1'b1;
+            if (h_coord == 11'd536 || h_coord == 11'd786 || v_coord == 10'd318 || v_coord == 10'd460 || v_coord == 10'd336)
+                is_card_border = 1'b1;
+        end
+        // Volume Level card (X: 536..786, Y: 468..544)
+        else if (v_coord >= 10'd468 && v_coord < 10'd545 && h_coord >= 11'd536 && h_coord < 11'd787) begin
+            is_card_panel = 1'b1;
+            if (h_coord == 11'd536 || h_coord == 11'd786 || v_coord == 10'd468 || v_coord == 10'd544 || v_coord == 10'd486)
+                is_card_border = 1'b1;
+        end
+        // Footer card (Y: 556..597)
+        else if (v_coord >= 10'd556 && v_coord < 10'd598 && h_coord >= 11'd2 && h_coord < 11'd798) begin
+            is_card_panel = 1'b1;
+            if (v_coord == 10'd556) is_card_border = 1'b1;
+        end
 
-        // 4. Anchor 2 marker at (X=100, Y=180)
-        is_origin2_marker = ((h_coord >= 11'd96 && h_coord <= 11'd104 && v_coord == 10'd180) ||
-                             (v_coord >= 10'd176 && v_coord <= 10'd184 && h_coord == 11'd100) ||
-                             (h_coord >= 11'd98 && h_coord <= 11'd102 && (v_coord == 10'd178 || v_coord == 10'd182)) ||
-                             (v_coord >= 10'd178 && v_coord <= 10'd182 && (h_coord == 11'd98 || h_coord == 11'd102)));
-        is_origin2_guide  = ((h_coord == 11'd100 && v_coord >= 10'd165 && v_coord <= 10'd230 && (v_coord & 10'd4) == 0) ||
-                             (v_coord == 10'd180 && h_coord >= 11'd60 && h_coord <= 11'd500 && (h_coord & 11'd4) == 0));
+        // 3. Piano Roll Grid & Notes (Y: 92..539, X: 68..515)
+        is_piano_grid_h    = 1'b0;
+        is_piano_grid_v    = 1'b0;
+        is_piano_c_root    = 1'b0;
+        is_piano_key_tag   = 1'b0;
+        is_piano_note_cell = 1'b0;
 
-        // 5. Subtle background grid every 100px (dotted pixel every 8 px)
-        is_grid_point = ((h_coord % 11'd100 == 0 && (v_coord & 10'd7) == 0) ||
-                         (v_coord % 10'd100 == 0 && (h_coord & 11'd7) == 0));
+        if (v_coord >= 10'd92 && v_coord < 10'd540) begin
+            r_idx = (v_coord - 10'd92) >> 4;
+            roll_pitch = 5'd27 - r_idx;
+            // C root row check (C1=0, C2=7, C3=14, C4=21)
+            if (roll_pitch % 7 == 0)
+                is_piano_c_root = 1'b1;
 
-        // Priority composition
+            // Horizontal line
+            if ((v_coord - 10'd92) % 16 == 15)
+                is_piano_grid_h = 1'b1;
+
+            // Key tag on left (X: 16..65)
+            if (h_coord >= 11'd16 && h_coord <= 11'd65) begin
+                if (h_coord == 11'd16 || h_coord == 11'd65 || ((v_coord - 10'd92) % 16 == 0))
+                    is_card_border = 1'b1;
+                else
+                    is_piano_key_tag = 1'b1;
+            end
+
+            // Vertical grid lines and note blocks across 16 columns (X: 68..515)
+            if (h_coord >= 11'd68 && h_coord < 11'd516) begin
+                s_idx = (h_coord - 11'd68) / 28;
+                // Vertical divider line
+                if ((h_coord - 11'd68) % 28 == 0 || (h_coord == 11'd515))
+                    is_piano_grid_v = 1'b1;
+
+                // Check active cell in roll_matrix
+                if (s_idx < 16 && roll_pitch < 28) begin
+                    if (roll_matrix[roll_pitch * 16 + s_idx]) begin
+                        // 2px margin inside cell
+                        if (((h_coord - 11'd68) % 28 >= 2) && ((h_coord - 11'd68) % 28 < 26) &&
+                            ((v_coord - 10'd92) % 16 >= 2) && ((v_coord - 10'd92) % 16 < 14)) begin
+                            is_piano_note_cell = 1'b1;
+                        end
+                    end
+                end
+            end
+        end
+
+        // 4. Red Playhead Running Line (width 2px)
+        is_playhead_line = 1'b0;
+        if (playhead_active && (v_coord >= 10'd70 && v_coord < 10'd540)) begin
+            if (h_coord >= playhead_x && h_coord <= playhead_x + 11'd1)
+                is_playhead_line = 1'b1;
+        end
+
+        // 5. Header Indicators (REC dot & Status badge)
+        is_rec_indicator = 1'b0;
+        if (|recording && rec_blink) begin
+            if (h_coord >= 11'd580 && h_coord <= 11'd588 && v_coord >= 10'd17 && v_coord <= 10'd25)
+                is_rec_indicator = 1'b1;
+        end
+
+        is_status_badge = (h_coord >= 11'd640 && h_coord < 11'd704 && v_coord >= 10'd10 && v_coord < 10'd32);
+
+        // 6. Waveform Selector Buttons (X: 542 + w*59, width 54, Y: 68..83)
+        is_wave_btn = 1'b0;
+        if (v_coord >= 10'd68 && v_coord < 10'd84 && h_coord >= 11'd542 && h_coord < 11'd778) begin
+            if ((h_coord - 11'd542) % 59 < 54) begin
+                if (((h_coord - 11'd542) / 59) == waveform_select)
+                    is_wave_btn = 1'b1;
+            end
+        end
+
+        // 7. Oscilloscope Screen (X: 544..778, Y: 116..304)
+        is_scope_screen = 1'b0;
+        is_scope_grid   = 1'b0;
+        is_scope_trace  = 1'b0;
+        if (h_coord >= 11'd544 && h_coord < 11'd778 && v_coord >= 10'd116 && v_coord < 10'd304) begin
+            is_scope_screen = 1'b1;
+            // Center horizontal zero line
+            if (v_coord == 10'd210)
+                is_scope_grid = 1'b1;
+            // Reticle grid every 47px vertically and 46px horizontally (dotted)
+            else if ((v_coord == 10'd163 || v_coord == 10'd257) && ((h_coord & 11'd4) == 0))
+                is_scope_grid = 1'b1;
+            else if ((h_coord == 11'd590 || h_coord == 11'd636 || h_coord == 11'd682 || h_coord == 11'd728) && ((v_coord & 10'd4) == 0))
+                is_scope_grid = 1'b1;
+
+            // Oscilloscope trace curve (thickness 3px)
+            if (v_coord >= wave_curve_y - 1 && v_coord <= wave_curve_y + 1)
+                is_scope_trace = 1'b1;
+        end
+
+        // 8. 4-Track Sequencer Rows (Y: 344 + t*26, height 22, X: 544..778)
+        is_track_row_active = 1'b0;
+        is_track_row_box    = 1'b0;
+        if (v_coord >= 10'd344 && v_coord < 10'd448 && h_coord >= 11'd544 && h_coord < 11'd778) begin
+            if ((v_coord - 10'd344) % 26 < 22) begin
+                is_track_row_box = 1'b1;
+                if (((v_coord - 10'd344) / 26) == selected_track)
+                    is_track_row_active = 1'b1;
+            end
+        end
+
+        // 9. Volume Bar 16 Segments (X: 552 + v*14, width 12, Y: 508..524)
+        is_vol_seg_active = 1'b0;
+        is_vol_seg_border = 1'b0;
+        if (v_coord >= 10'd508 && v_coord < 10'd524 && h_coord >= 11'd552 && h_coord < 11'd776) begin
+            v_idx = (h_coord - 11'd552) / 14;
+            if ((h_coord - 11'd552) % 14 < 12) begin
+                if (h_coord == 11'd552 + v_idx * 14 || h_coord == 11'd552 + v_idx * 14 + 11 ||
+                    v_coord == 10'd508 || v_coord == 10'd523)
+                    is_vol_seg_border = 1'b1;
+                else if (v_idx < volume)
+                    is_vol_seg_active = 1'b1;
+            end
+        end
+
+        // -------------------------------------------------------------
+        // Priority Color Multiplexing
+        // -------------------------------------------------------------
         pixel_color = COLOR_BG;
 
-        if (is_grid_point)
-            pixel_color = COLOR_GRID;
+        if (is_card_panel)
+            pixel_color = COLOR_PANEL;
 
-        if (is_origin1_guide)
-            pixel_color = 12'h034;
-        if (is_origin2_guide)
-            pixel_color = 12'h320;
+        if (is_piano_c_root)
+            pixel_color = COLOR_C_ROOT;
 
-        if (is_origin1_marker)
-            pixel_color = COLOR_ORIGIN1;
-        if (is_origin2_marker)
-            pixel_color = COLOR_ORIGIN2;
+        if (is_piano_key_tag)
+            pixel_color = (roll_pitch % 7 == 0) ? COLOR_ACCENT : COLOR_PANEL;
 
-        if (is_center_cross || is_center_box || is_center_dot)
-            pixel_color = COLOR_CENTER;
+        if (is_piano_grid_h)
+            pixel_color = is_piano_c_root ? COLOR_ACCENT : COLOR_GRID;
+
+        if (is_piano_grid_v)
+            pixel_color = (s_idx % 4 == 0) ? COLOR_INK : COLOR_GRID;
+
+        if (is_piano_note_cell)
+            pixel_color = COLOR_ACCENT;
+
+        if (is_scope_screen)
+            pixel_color = COLOR_SCOPE_BG;
+
+        if (is_scope_grid)
+            pixel_color = COLOR_SCOPE_GRID;
+
+        if (is_scope_trace)
+            pixel_color = COLOR_SCOPE_TRACE;
+
+        if (is_track_row_box)
+            pixel_color = is_track_row_active ? COLOR_ACCENT : COLOR_BG;
+
+        if (is_wave_btn)
+            pixel_color = COLOR_ACCENT;
+
+        if (is_vol_seg_active)
+            pixel_color = (v_idx >= 13) ? COLOR_ALERT : COLOR_ACCENT;
+
+        if (is_status_badge)
+            pixel_color = (|playing) ? COLOR_PLAY : (audio_play ? COLOR_ACCENT : 12'hDDD);
+
+        if (is_rec_indicator)
+            pixel_color = COLOR_ALERT;
+
+        if (is_playhead_line)
+            pixel_color = COLOR_ALERT;
+
+        if (is_card_border || is_vol_seg_border)
+            pixel_color = COLOR_INK;
 
         if (text_pixel)
-            pixel_color = COLOR_TEXT;
+            pixel_color = char_color;
 
-        if (is_border)
-            pixel_color = COLOR_BORDER;
+        if (is_screen_border)
+            pixel_color = COLOR_INK;
 
         if (!rst_n)
             pixel_color = 12'h000;

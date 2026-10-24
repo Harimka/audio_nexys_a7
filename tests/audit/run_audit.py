@@ -33,7 +33,7 @@ keyboard_cases = {
 }
 
 vga_cases = {
-    'tb_vga_daw_ui': ['vga_daw_ui', 'font_rom'],
+    'tb_vga_daw_ui': ['vga_daw_ui', 'font_rom', 'waveform_lookup'],
 }
 
 with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
