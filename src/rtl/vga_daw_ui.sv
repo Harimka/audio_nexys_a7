@@ -101,6 +101,9 @@ module vga_daw_ui (
         end
     end
 
+    // Pitch mapping for active live note input
+    wire [4:0] current_active_pitch = {3'b0, active_octave} * 5'd7 + {2'b0, active_note};
+
     // Waveform generator for live oscilloscope
     reg [10:0] wave_x_offset;
     wire [7:0] wave_phase_addr;
@@ -328,7 +331,10 @@ module vga_daw_ui (
                 grid_pitch = 5'd27 - ((v_coord - 10'd92) >> 4); // 0=C1, 27=B4
                 grid_note_idx = grid_pitch % 7;
                 grid_octave   = grid_pitch / 7 + 1;
-                char_color = (grid_note_idx == 0) ? COLOR_PANEL : COLOR_INK; // White text on blue for C
+                if (active_note_valid && (grid_pitch == current_active_pitch))
+                    char_color = COLOR_PANEL;
+                else
+                    char_color = (grid_note_idx == 0) ? COLOR_PANEL : COLOR_INK; // White text on blue for C
                 if (h_coord < 11'd34)
                     char_code = pitch_char(grid_note_idx);
                 else if (h_coord >= 11'd42 && h_coord < 11'd50)
@@ -611,6 +617,8 @@ module vga_daw_ui (
     reg is_piano_grid_v;
     reg is_piano_c_root;
     reg is_piano_key_tag;
+    reg is_piano_active_key;
+    reg is_piano_active_row;
     reg is_piano_note_cell;
     reg is_playhead_line;
     reg is_rec_indicator;
@@ -678,11 +686,13 @@ module vga_daw_ui (
         end
 
         // 3. Piano Roll Grid & Notes (Y: 92..539, X: 68..515)
-        is_piano_grid_h    = 1'b0;
-        is_piano_grid_v    = 1'b0;
-        is_piano_c_root    = 1'b0;
-        is_piano_key_tag   = 1'b0;
-        is_piano_note_cell = 1'b0;
+        is_piano_grid_h     = 1'b0;
+        is_piano_grid_v     = 1'b0;
+        is_piano_c_root     = 1'b0;
+        is_piano_key_tag    = 1'b0;
+        is_piano_active_key = 1'b0;
+        is_piano_active_row = 1'b0;
+        is_piano_note_cell  = 1'b0;
 
         if (v_coord >= 10'd92 && v_coord < 10'd540) begin
             r_idx = (v_coord - 10'd92) >> 4;
@@ -690,6 +700,9 @@ module vga_daw_ui (
             // C root row check (C1=0, C2=7, C3=14, C4=21)
             if (roll_pitch % 7 == 0)
                 is_piano_c_root = 1'b1;
+
+            if (active_note_valid && (roll_pitch == current_active_pitch))
+                is_piano_active_row = 1'b1;
 
             // Horizontal line
             if ((v_coord - 10'd92) % 16 == 15)
@@ -699,8 +712,11 @@ module vga_daw_ui (
             if (h_coord >= 11'd16 && h_coord <= 11'd65) begin
                 if (h_coord == 11'd16 || h_coord == 11'd65 || ((v_coord - 10'd92) % 16 == 0))
                     is_card_border = 1'b1;
-                else
+                else begin
                     is_piano_key_tag = 1'b1;
+                    if (active_note_valid && (roll_pitch == current_active_pitch))
+                        is_piano_active_key = 1'b1;
+                end
             end
 
             // Vertical grid lines and note blocks across 16 columns (X: 68..515)
@@ -804,8 +820,14 @@ module vga_daw_ui (
         if (is_piano_c_root)
             pixel_color = COLOR_C_ROOT;
 
+        if (is_piano_active_row)
+            pixel_color = 12'hFFB; // Soft amber tint for the active note row
+
         if (is_piano_key_tag)
             pixel_color = (roll_pitch % 7 == 0) ? COLOR_ACCENT : COLOR_PANEL;
+
+        if (is_piano_active_key)
+            pixel_color = COLOR_ALERT; // Bright highlighted active piano key
 
         if (is_piano_grid_h)
             pixel_color = is_piano_c_root ? COLOR_ACCENT : COLOR_GRID;
