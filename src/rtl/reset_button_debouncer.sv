@@ -32,10 +32,10 @@ module reset_button_debouncer #(
     pll_rst_n <= ~debouncing_finished;
   end
 
-  always @( posedge clk_5mhz or negedge pll_rst_n) begin
-    if      ( !pll_rst_n )
+  always @( posedge clk_5mhz or negedge pll_rst_n or negedge pll_locked ) begin
+    if      ( !pll_rst_n || !pll_locked )
       domain_5mhz_synch <= 2'b0;
-    else if ( pll_locked )
+    else
       domain_5mhz_synch <= {domain_5mhz_synch[0], 1'b1};
   end
   assign rst_n = domain_5mhz_synch[1];

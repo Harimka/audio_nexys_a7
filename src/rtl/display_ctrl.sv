@@ -24,10 +24,10 @@ module display_ctrl #(
     localparam h_period = h_pulse + h_bp + (h_pixels-1) + h_fp;
     localparam v_period = v_pulse + v_bp + (v_pixels-1) + v_fp;
   //----------- Full range counters                                -----------//
-    //reg [$clog2(h_period)-1:0] h_count;  // Verilator doesn't work with $clog2
-    //reg [$clog2(v_period)-1:0] v_count;
     reg [10:0] h_count;
     reg [ 9:0] v_count;
+
+    wire [9:0] next_v_count = (h_count == h_period) ? ((v_count < v_period) ? (v_count + 1'b1) : 10'd0) : v_count;
 
     always_ff @( posedge pixel_clk ) begin  // Pixel Counters
       if ( !rst_n ) begin
@@ -61,8 +61,8 @@ module display_ctrl #(
         else begin
           h_sync <= ~h_pol;
         end
-        // Vertical Sync Signal
-        if ( (v_count >= (v_pixels-1) + v_fp) && (v_count < (v_pixels-1) + v_fp + v_pulse) ) begin
+        // Vertical Sync Signal (aligned with start of line)
+        if ( (next_v_count >= v_pixels + v_fp) && (next_v_count < v_pixels + v_fp + v_pulse) ) begin
           v_sync <= v_pol;
         end
         else begin

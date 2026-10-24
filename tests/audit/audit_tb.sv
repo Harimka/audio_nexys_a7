@@ -121,8 +121,13 @@ module audit_reset;
     reset_button=0;#2000;reset_button=1;#2000;pll_locked=1;#2000;
     if(rst_n!==1)$fatal(1,"Reset release after lock");
     pll_locked=0;#2000;
+`ifdef EXPECT_BASELINE_DEFECTS
     if(rst_n===1)$display("REPRODUCED RESET ISSUE: rst_n remains 1 after PLL lock is lost");
     else $fatal(1,"Unexpected: issue no longer reproduced");
+`else
+    if(rst_n===0)$display("PASS RESET: rst_n asserts to 0 synchronously when locked de-asserts");
+    else $fatal(1,"FAIL: rst_n remains 1 after PLL lock is lost");
+`endif
     $finish;
   end
 endmodule
@@ -153,8 +158,13 @@ module audit_vga;
     end
     if(de_count!=480000||de_mismatch!=0||hs_mismatch!=0||hs_count!=128*628||vs_count!=4*1056)$fatal(1,"Unexpected VGA geometry");
     $display("PASS VGA geometry: 1056x628 total, 480000 active pixels, HS=128 pixels, VS=4 lines");
+`ifdef EXPECT_BASELINE_DEFECTS
     $display("REPRODUCED VGA ISSUE: VS differs from configured front porch by %0d pixel clocks/frame",vs_mismatch);
     if(vs_mismatch==0)$fatal(1,"Unexpected: issue no longer reproduced");
+`else
+    if(vs_mismatch!=0)$fatal(1,"FAIL VGA: VS differs from configured front porch by %0d pixel clocks/frame",vs_mismatch);
+    $display("PASS VGA: Vertical front porch matches exact standard specification (vs_mismatch=0)");
+`endif
     $finish;
   end
 endmodule

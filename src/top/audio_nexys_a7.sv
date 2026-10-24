@@ -1,7 +1,8 @@
 module audio_nexys_a7 (
   //----------- CLOCK                                            -------------//
     input   logic            CLK100MHZ ,
-    input   logic            UART_TXD_IN,
+    input   logic            PS2_CLK   ,
+    input   logic            PS2_DATA  ,
   //----------- Switches                                         -------------//
     input   logic  [15:0]    SW        ,
   //----------- Buttons                                          -------------//
@@ -47,12 +48,6 @@ module audio_nexys_a7 (
     reg  [2:0]    note_index  ;
   //----------- Audio data path                                  -----------//
     wire  [15:0]  sample        ;
-    wire  [15:0]  local_sample  ;
-    wire  [15:0]  midi_sample   ;
-    wire          midi_gate     ;
-    wire  [ 6:0]  midi_note     ;
-    wire  [ 6:0]  midi_velocity ;
-    wire          audio_play    ;
     wire          valid         ;
     wire          ready         ;
     wire  [19:0]  vol_mult      ;
@@ -168,14 +163,6 @@ module audio_nexys_a7 (
       .note_index  ( note_index )
     );
 
-    midi_uart_receiver midi_uart_receiver_inst (
-      .clk       ( clk_audio     ),
-      .rst_n     ( aud_rst_n     ),
-      .uart_rx   ( UART_TXD_IN   ),
-      .gate      ( midi_gate     ),
-      .note      ( midi_note     ),
-      .velocity  ( midi_velocity )
-    );
 //____________________________________________________________________________//
 
 //------------- Seven Segments Indicators                        -------------//
@@ -221,23 +208,10 @@ module audio_nexys_a7 (
       .rst_n       ( aud_rst_n   ),
       .note_index  ( note_index  ),
       .octave_sel  ( SW [2:0]    ),
-      .sample      ( local_sample),
+      .sample      ( sample      ),
       .valid       ( valid       ),
       .ready       ( ready       )
     );
-    
-    midi_wavetable midi_wavetable_inst (
-      .clk       ( clk_audio     ),
-      .rst_n     ( aud_rst_n     ),
-      .gate      ( midi_gate     ),
-      .note      ( midi_note     ),
-      .velocity  ( midi_velocity ),
-      .ready     ( ready         ),
-      .sample    ( midi_sample   )
-    );
-
-    assign audio_play    = SW[15] ? midi_gate : play;
-    assign sample        = SW[15] ? midi_sample : local_sample;
     assign vol_mult      = sample * volume;
     assign sample_scaled = vol_mult [19:4];
   //----------- FIFO                                             -----------//
@@ -246,7 +220,7 @@ module audio_nexys_a7 (
     // 256 samples = ~5.3 ms of sound (latency of note/volume/pause changes) 
     // but even student can't catch the 5.3 ms
 
-    assign ready = audio_play && !fifo_full;
+    assign ready = play && !fifo_full;
 
     assign fifo_wr_en   = ready;
     assign fifo_wr_data = {16'b0, sample_scaled};
