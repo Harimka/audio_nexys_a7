@@ -15,7 +15,6 @@ module vga_daw_ui (
     input  wire [19:0] preview_counts,
     input  wire [319:0] preview_notes,
     input  wire [447:0] roll_matrix,
-    input  wire [27:0] live_notes,
     input  wire        active_note_valid,
     input  wire [2:0]  active_note,
     input  wire [1:0]  active_octave,
@@ -27,7 +26,6 @@ module vga_daw_ui (
     localparam [11:0] COLOR_INK    = 12'h111;
     localparam [11:0] COLOR_ACCENT = 12'h06F;
     localparam [11:0] COLOR_ALERT  = 12'hF33;
-    localparam [11:0] COLOR_LIVE   = 12'h0A5;
 
     reg [4:0] small_field;
     reg [5:0] small_char_index;
@@ -71,7 +69,6 @@ module vga_daw_ui (
     reg is_grid;
     reg is_key_border;
     reg is_note_block;
-    reg is_live_note;
     reg is_wave_line;
     reg is_header;
     reg is_footer;
@@ -241,7 +238,7 @@ module vga_daw_ui (
         .char_code(key_octave_code), .row(key_glyph_row), .bits(key_octave_glyph_bits)
     );
 
-    assign small_text_pixel = (small_field == 5'd15 && (((h_coord-11'd60) % 28) < 6 || ((h_coord-11'd60) % 28) >= 22))
+    assign small_text_pixel = (small_field == 5'd15 && ((h_coord-11'd60) % 15) >= 8)
                             ? 1'b0 : small_glyph_bits[7-small_column];
     assign large_text_pixel = large_glyph_bits[7-((h_coord-11'd600) >> 2) % 8];
     assign wave_phase_addr = wave_x_offset[7:0] + (wave_x_offset[7:3]);
@@ -322,20 +319,11 @@ module vga_daw_ui (
             small_field = 5'd14; small_char_index = (h_coord-11'd562) >> 4;
             small_row = (v_coord-10'd538) >> 1; small_column = ((h_coord-11'd562) >> 1) & 3'b111;
         end
-        if (v_coord >= 10'd70 && v_coord < 10'd78 && h_coord >= 11'd60 && h_coord < 11'd508) begin
+        if (v_coord >= 10'd70 && v_coord < 10'd78 && h_coord >= 11'd60 && h_coord < 11'd540) begin
             small_field = 5'd15;
-            small_char_index = ((h_coord-11'd60) / 28) * 2 + (((h_coord-11'd60) % 28 >= 6 && (h_coord-11'd60) % 28 < 22)
-                                     ? (((h_coord-11'd60) % 28 - 6) / 8) : 0);
+            small_char_index = (h_coord-11'd60) / 15;
             small_row = v_coord - 10'd70;
-            small_column = ((h_coord-11'd60) % 28 - 6) % 8;
-            if (((h_coord-11'd60) % 28) < 6 || ((h_coord-11'd60) % 28) >= 22)
-                small_char_code = 8'h20;
-        end
-        if (v_coord >= 10'd70 && v_coord < 10'd78 && h_coord >= 11'd510 && h_coord < 11'd542) begin
-            small_field = 5'd17;
-            small_char_index = (h_coord-11'd510) >> 3;
-            small_row = v_coord - 10'd70;
-            small_column = (h_coord-11'd510) & 3'b111;
+            small_column = (h_coord-11'd60) % 15;
         end
         if (v_coord >= 10'd64 && v_coord < 10'd80 && h_coord >= 11'd562 && h_coord < 11'd786) begin
             small_field = 5'd16;
@@ -371,22 +359,20 @@ module vga_daw_ui (
             row_y = 10'd92 + grid_row * 16;
             note_pitch_row = 6'd27 - grid_row;
         end
-        if (h_coord >= 11'd60 && h_coord < 11'd508) begin
-            grid_step = (h_coord-11'd60) / 28;
-            slot_x = 11'd60 + grid_step * 28;
+        if (h_coord >= 11'd60 && h_coord < 11'd540) begin
+            grid_step = (h_coord-11'd60) / 30;
+            slot_x = 11'd60 + grid_step * 30;
             preview_note = note_at(selected_track, grid_step[3:0]);
         end
         is_note_block = 1'b0;
-        if (v_coord >= 10'd92 && v_coord < 10'd540 && h_coord >= 11'd60 && h_coord < 11'd508 && grid_step < 16) begin
+        if (v_coord >= 10'd92 && v_coord < 10'd540 && h_coord >= 11'd60 && h_coord < 11'd540 && grid_step < 16) begin
             // Adjacent cells merge visually into a duration block; blank cells
             // remain rests, and simultaneous notes occupy separate pitch rows.
             if (roll_matrix[note_pitch_row * 16 + grid_step] &&
-                h_coord >= slot_x + 11'd2 && h_coord < slot_x + 11'd26 &&
+                h_coord >= slot_x + 11'd2 && h_coord < slot_x + 11'd28 &&
                 v_coord >= row_y + 10'd2 && v_coord < row_y + 10'd14)
                 is_note_block = 1'b1;
         end
-        is_live_note = (v_coord >= 10'd92 && v_coord < 10'd540 && h_coord >= 11'd512 && h_coord < 11'd538 &&
-                        live_notes[note_pitch_row]);
 
         is_header = (v_coord < 10'd40);
         is_footer = (v_coord >= 10'd561);
@@ -397,8 +383,8 @@ module vga_daw_ui (
                     (h_coord >= 11'd550 && h_coord <= 11'd798 && (v_coord == 10'd280 || v_coord == 10'd281)) ||
                     (h_coord >= 11'd550 && h_coord <= 11'd798 && (v_coord == 10'd42 || v_coord == 10'd559)));
         is_grid = ((v_coord >= 10'd92 && v_coord < 10'd540 && ((v_coord-10'd92) % 16 == 0)) ||
-                   (h_coord >= 11'd60 && h_coord < 11'd508 && ((h_coord-11'd60) % 28 == 0)) ||
-                   (v_coord >= 10'd66 && v_coord < 10'd92 && h_coord >= 11'd60 && h_coord < 11'd508 && ((h_coord-11'd60) % 112 == 0)));
+                   (h_coord >= 11'd60 && h_coord < 11'd540 && ((h_coord-11'd60) % 30 == 0)) ||
+                   (v_coord >= 10'd66 && v_coord < 10'd92 && h_coord >= 11'd60 && h_coord < 11'd540 && ((h_coord-11'd60) % 120 == 0)));
         is_key_border = (h_coord >= 11'd0 && h_coord < 11'd60 && v_coord >= 10'd92 && v_coord < 10'd540 &&
                          ((v_coord-10'd92) % 16 == 0 || h_coord == 0 || h_coord == 11'd59));
         track_index = (v_coord >= 10'd460 && v_coord < 10'd540) ? ((v_coord-10'd460) / 20) : 4'd0;
@@ -431,13 +417,9 @@ module vga_daw_ui (
             pixel_color = COLOR_ACCENT;
         if (v_coord >= 10'd66 && v_coord < 10'd92 && h_coord >= 11'd0 && h_coord < 11'd540)
             pixel_color = 12'hF1F;
-        if (v_coord >= 10'd66 && v_coord < 10'd92 && h_coord >= 11'd60 && h_coord < 11'd508 &&
-            (((h_coord-11'd60) % 112) == 0))
+        if (v_coord >= 10'd66 && v_coord < 10'd92 && h_coord >= 11'd60 && h_coord < 11'd540 &&
+            (((h_coord-11'd60) % 120) == 0))
             pixel_color = 12'hCBD;
-        if (h_coord >= 11'd510 && h_coord < 11'd540 && v_coord >= 10'd66 && v_coord < 10'd540)
-            pixel_color = 12'hF1F;
-        if (is_live_note)
-            pixel_color = COLOR_LIVE;
         if (is_rec_dot && h_coord >= 11'd630 && h_coord < 11'd642 && v_coord >= 10'd14 && v_coord < 10'd26)
             pixel_color = COLOR_ALERT;
         if (is_frame || is_grid || is_key_border)
@@ -469,8 +451,6 @@ module vga_daw_ui (
             pixel_color = COLOR_BG;
         if (small_field == 5'd16 && small_text_pixel)
             pixel_color = (((h_coord-11'd562) / 56) == waveform_select) ? 12'hFFF : COLOR_INK;
-        if (small_field == 5'd17 && small_text_pixel)
-            pixel_color = COLOR_INK;
         if (small_field == 5'd1 && small_text_pixel)
             pixel_color = COLOR_ALERT;
         if (small_field >= 5'd10 && small_field <= 5'd13 && is_track_selected && small_text_pixel)

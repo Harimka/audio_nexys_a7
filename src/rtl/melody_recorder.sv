@@ -46,7 +46,6 @@ module melody_recorder #(
     (* ram_style = "registers" *) reg [1:0]  waveform_mem[0:EVENT_DEPTH-1];
 
     reg [31:0] elapsed_samples;
-    reg [31:0] record_elapsed_total;
     reg [31:0] wait_samples;
     reg [PTR_BITS-1:0] play_index;
     reg cleanup_pending;
@@ -115,7 +114,6 @@ module melody_recorder #(
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             elapsed_samples <= 32'd0;
-            record_elapsed_total <= 32'd0;
             wait_samples <= 32'd0;
             play_index <= {PTR_BITS{1'b0}};
             write_index <= {PTR_BITS{1'b0}};
@@ -157,8 +155,6 @@ module melody_recorder #(
         end else begin
             if (sample_tick && recording)
                 elapsed_samples <= elapsed_samples + 1'b1;
-            if (sample_tick && recording)
-                record_elapsed_total <= record_elapsed_total + 1'b1;
 
             // F9 starts a fresh take or closes the current one.
             if (record_toggle) begin
@@ -171,7 +167,6 @@ module melody_recorder #(
                     roll_build_matrix <= 448'd0;
                     write_index <= {PTR_BITS{1'b0}};
                     elapsed_samples <= 32'd0;
-                    record_elapsed_total <= 32'd0;
                     render_time <= 32'd0;
                     render_key_active <= 256'd0;
                     rendering <= 1'b0;
@@ -202,24 +197,6 @@ module melody_recorder #(
                     preview_count <= preview_count + 1'b1;
                 end
                 elapsed_samples <= 32'd0;
-                // Update the visible take immediately. Note On is stored as a
-                // live start marker; Note Off commits its duration cells without
-                // waiting for REC to stop. The sound/event memories are unchanged.
-                if (key_down) begin
-                    render_start_step[playback_key_index(key_id)] <= record_elapsed_total / UI_STEP_SAMPLES;
-                    render_key_pitch[playback_key_index(key_id)] <= note_octave * 5'd7 + note_index;
-                    render_key_active[playback_key_index(key_id)] <=
-                        (record_elapsed_total / UI_STEP_SAMPLES) < 16;
-                end else if (render_key_active[playback_key_index(key_id)]) begin
-                    for (render_i = 0; render_i < 16; render_i = render_i + 1) begin
-                        if (render_i >= render_start_step[playback_key_index(key_id)] &&
-                            (render_i < ((record_elapsed_total + UI_STEP_SAMPLES - 1'b1) / UI_STEP_SAMPLES) ||
-                             render_i == render_start_step[playback_key_index(key_id)]))
-                            if (render_key_pitch[playback_key_index(key_id)] < 28)
-                                roll_matrix[render_key_pitch[playback_key_index(key_id)] * 16 + render_i] <= 1'b1;
-                    end
-                    render_key_active[playback_key_index(key_id)] <= 1'b0;
-                end
                 if (event_count == DEPTH_VALUE - 1'b1) begin
                     recording <= 1'b0;
                     render_tail_samples <= 32'd0;

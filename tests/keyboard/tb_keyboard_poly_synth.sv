@@ -11,7 +11,6 @@ module tb_keyboard_poly_synth;
     reg ready = 1;
     wire [15:0] sample;
     wire [3:0] active_count;
-    wire [27:0] active_pitch_mask;
 
     keyboard_poly_synth #(.VOICES(8)) dut (
         .clk(clk), .rst_n(rst_n), .note_event(note_event),

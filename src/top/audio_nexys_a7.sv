@@ -63,7 +63,6 @@ module audio_nexys_a7 (
     wire [ 2:0]   keyboard_poly_note_octave;
     wire [15:0]   keyboard_poly_sample ;
     wire [ 3:0]   keyboard_voice_count ;
-    wire [27:0]   keyboard_active_pitch_mask;
     wire          record_toggle       ;
     wire          play_trigger        ;
     wire          play_stop            ;
@@ -154,14 +153,14 @@ module audio_nexys_a7 (
     wire [19:0]   ui_preview_counts_audio = {melody_preview_count[3], melody_preview_count[2], melody_preview_count[1], melody_preview_count[0]};
     wire [27:0]   ui_event_counts_audio = {melody_event_count[3], melody_event_count[2], melody_event_count[1], melody_event_count[0]};
     wire [447:0]  ui_roll_audio = melody_roll_matrix[selected_track];
-    wire [866:0]  ui_state_live = {ui_roll_audio, keyboard_active_pitch_mask, ui_preview_notes_audio, ui_preview_counts_audio, ui_event_counts_audio,
+    wire [838:0]  ui_state_live = {ui_roll_audio, ui_preview_notes_audio, ui_preview_counts_audio, ui_event_counts_audio,
                                     melody_playing, melody_recording, audio_play, volume, selected_track,
                                     waveform_select, ui_note_valid_audio, ui_note_octave_audio, ui_note_index_audio};
-    reg [866:0]   ui_state_audio;
+    reg [838:0]   ui_state_audio;
     reg           ui_state_toggle_audio;
     (* ASYNC_REG = "TRUE" *) reg [1:0] ui_state_toggle_sync;
     reg           ui_state_toggle_sync_d;
-    reg [866:0]   ui_state_pixel;
+    reg [838:0]   ui_state_pixel;
 
   //----------- VGA Controller                                   -----------//
     wire [10:0]   h_coord       ;   // pixel coordinates, 0..1055
@@ -318,7 +317,7 @@ module audio_nexys_a7 (
         ui_note_index_audio <= 3'd0;
         ui_note_octave_audio <= 2'd0;
         ui_note_valid_audio <= 1'b0;
-        ui_state_audio <= 867'd0;
+        ui_state_audio <= 839'd0;
         ui_state_toggle_audio <= 1'b0;
       end else begin
         if (keyboard_note_event) begin
@@ -337,7 +336,7 @@ module audio_nexys_a7 (
       if (!pix_rst_n) begin
         ui_state_toggle_sync <= 2'b00;
         ui_state_toggle_sync_d <= 1'b0;
-        ui_state_pixel <= 867'd0;
+        ui_state_pixel <= 839'd0;
       end else begin
         ui_state_toggle_sync <= {ui_state_toggle_sync[0], ui_state_toggle_audio};
         ui_state_toggle_sync_d <= ui_state_toggle_sync[1];
@@ -511,8 +510,7 @@ module audio_nexys_a7 (
       .note_waveform   ( synth_waveform_select ),
       .ready        ( ready               ),
       .sample       ( keyboard_poly_sample),
-      .active_count ( keyboard_voice_count),
-      .active_pitch_mask ( keyboard_active_pitch_mask )
+      .active_count ( keyboard_voice_count)
     );
 
     assign audio_play        = play || (keyboard_voice_count != 0);
@@ -586,8 +584,7 @@ module audio_nexys_a7 (
       .event_counts    ( ui_state_pixel[50:23] ),
       .preview_counts  ( ui_state_pixel[70:51] ),
       .preview_notes   ( ui_state_pixel[390:71] ),
-      .roll_matrix     ( ui_state_pixel[866:419] ),
-      .live_notes      ( ui_state_pixel[418:391] ),
+      .roll_matrix     ( ui_state_pixel[838:391] ),
       .active_note_valid ( ui_state_pixel[5] ),
       .active_note     ( ui_state_pixel[2:0] ),
       .active_octave   ( ui_state_pixel[4:3] ),

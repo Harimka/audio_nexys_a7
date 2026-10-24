@@ -13,8 +13,7 @@ module keyboard_poly_synth #(
     input  wire [1:0]  note_waveform,
     input  wire        ready,
     output reg  [15:0] sample,
-    output reg  [3:0]  active_count,
-    output reg  [27:0] active_pitch_mask
+    output reg  [3:0]  active_count
 );
     localparam [31:0] INC_C4 = 32'h01652AB0;
     localparam [31:0] INC_D4 = 32'h0190E48F;
@@ -159,14 +158,11 @@ module keyboard_poly_synth #(
     always @* begin
         mix_sum = 20'sd0;
         active_count = 4'd0;
-        active_pitch_mask = 28'd0;
         mix_shift = 3'd0;
         scaled_mix = 20'sd0;
         for (integer j = 0; j < VOICES; j = j + 1) begin
             if (active[j]) begin
                 active_count = active_count + 1'b1;
-                if ((octave_id[j] * 7 + note_id[j]) < 28)
-                    active_pitch_mask[octave_id[j] * 7 + note_id[j]] = 1'b1;
                 mix_sum = mix_sum + $signed({4'b0000, voice_wave[j]}) - 20'sd32768;
             end
         end
