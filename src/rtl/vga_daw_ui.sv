@@ -697,16 +697,12 @@ module vga_daw_ui (
         if (v_coord >= 10'd92 && v_coord < 10'd540) begin
             r_idx = (v_coord - 10'd92) >> 4;
             roll_pitch = 5'd27 - r_idx;
-            // C root row check (C1=0, C2=7, C3=14, C4=21)
-            if (roll_pitch % 7 == 0)
-                is_piano_c_root = 1'b1;
 
-            if (active_note_valid && (roll_pitch == current_active_pitch))
-                is_piano_active_row = 1'b1;
-
-            // Horizontal line
-            if ((v_coord - 10'd92) % 16 == 15)
-                is_piano_grid_h = 1'b1;
+            // Horizontal grid lines: only inside key tags and step columns
+            if ((v_coord - 10'd92) % 16 == 15) begin
+                if ((h_coord >= 11'd16 && h_coord <= 11'd65) || (h_coord >= 11'd68 && h_coord <= 11'd515))
+                    is_piano_grid_h = 1'b1;
+            end
 
             // Key tag on left (X: 16..65)
             if (h_coord >= 11'd16 && h_coord <= 11'd65) begin
@@ -719,8 +715,15 @@ module vga_daw_ui (
                 end
             end
 
-            // Vertical grid lines and note blocks across 16 columns (X: 68..515)
+            // Vertical grid lines, C-root row tint, and note blocks across 16 columns (X: 68..515)
             if (h_coord >= 11'd68 && h_coord < 11'd516) begin
+                // C root row check (C1=0, C2=7, C3=14, C4=21) - inside grid area only
+                if (roll_pitch % 7 == 0)
+                    is_piano_c_root = 1'b1;
+
+                if (active_note_valid && (roll_pitch == current_active_pitch))
+                    is_piano_active_row = 1'b1;
+
                 s_idx = (h_coord - 11'd68) / 28;
                 // Vertical divider line
                 if ((h_coord - 11'd68) % 28 == 0 || (h_coord == 11'd515))

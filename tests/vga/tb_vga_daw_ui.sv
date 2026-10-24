@@ -131,6 +131,11 @@ module tb_vga_daw_ui;
         // Pitch 14 is C3 (a C root row), so background is COLOR_C_ROOT
         check_pixel(11'd100, 10'd304, COLOR_C_ROOT, "Empty C3 cell background");
 
+        // Verify bounds: C-root tint and grid lines must NOT bleed outside table
+        check_pixel(11'd10,  10'd528, COLOR_BG,    "Outside left of piano card is clean background");
+        check_pixel(11'd66,  10'd528, COLOR_PANEL, "Gutter between keys and grid is card panel");
+        check_pixel(11'd530, 10'd528, COLOR_BG,    "Gap between piano roll and right panels is clean background");
+
         // -------------------------------------------------------------
         // TEST 4: RED PLAYHEAD LINE AND 8-STEP WINDOW SHIFT
         // -------------------------------------------------------------
