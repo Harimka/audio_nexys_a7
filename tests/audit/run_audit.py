@@ -27,9 +27,13 @@ cases = {
 keyboard_cases = {
     'tb_ps2_keyboard_digit': ['ps2_keyboard_digit'],
     'tb_ps2_keyboard_stack': ['ps2_keyboard_digit'],
-    'tb_keyboard_poly_synth': ['keyboard_poly_synth'],
+    'tb_keyboard_poly_synth': ['keyboard_poly_synth', 'waveform_lookup'],
     'tb_melody_recorder': ['melody_recorder'],
     'tb_sevseg_digit_mask': ['sevseg_ctrl'],
+}
+
+vga_cases = {
+    'tb_vga_daw_ui': ['vga_daw_ui', 'font_rom'],
 }
 
 with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
@@ -49,6 +53,19 @@ with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
     if keyboard_dir.exists():
         for bench, modules in keyboard_cases.items():
             bench_file = keyboard_dir / (bench + '.sv')
+            if bench_file.exists():
+                target = str(pathlib.Path(temp) / (bench + '.vvp'))
+                subprocess.run(['iverilog', '-g2012', '-s', bench, '-o', target,
+                                str(bench_file)] +
+                               [str(src / 'rtl' / (module + '.sv')) for module in modules],
+                               check=True)
+                subprocess.run(['vvp', target], check=True, timeout=60)
+
+    # 3. VGA milestone regression tests
+    vga_dir = here.parent / 'vga'
+    if vga_dir.exists():
+        for bench, modules in vga_cases.items():
+            bench_file = vga_dir / (bench + '.sv')
             if bench_file.exists():
                 target = str(pathlib.Path(temp) / (bench + '.vvp'))
                 subprocess.run(['iverilog', '-g2012', '-s', bench, '-o', target,

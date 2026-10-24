@@ -12,11 +12,16 @@ module tb_melody_recorder;
     reg [7:0] key_id = 0;
     reg [2:0] note_index = 0;
     reg [2:0] note_octave = 3;
+    reg [1:0] note_waveform = 0;
     reg event_ready = 1;
     wire event_valid, event_down, recording, playing;
     wire [7:0] event_key;
     wire [2:0] event_note_index, event_note_octave;
+    wire [1:0] event_waveform;
     wire [6:0] event_count;
+    wire [4:0] preview_count;
+    wire [79:0] preview_notes;
+    wire [447:0] roll_matrix;
     integer observed = 0;
     integer i;
     reg [1:0] seen_down;
@@ -75,13 +80,13 @@ module tb_melody_recorder;
         if (observed != 0) $fatal(1, "first note played before its recorded delay");
         tick_samples(1);
         wait (observed == 1);
-        if (!seen_down[0] || seen_key[0] != 8'h96)
+        if (!seen_down[0] || seen_key[0] != 8'h80)
             $fatal(1, "playback did not emit tagged note-on");
         tick_samples(4);
         if (observed != 1) $fatal(1, "second note event played before its recorded delay");
         tick_samples(1);
         wait (observed == 2);
-        if (seen_down[1] || seen_key[1] != 8'h96)
+        if (seen_down[1] || seen_key[1] != 8'h80)
             $fatal(1, "playback did not emit matching tagged note-off");
         wait (!playing && !dut.cleanup_pending);
 
@@ -93,12 +98,12 @@ module tb_melody_recorder;
         pulse_record();
         pulse_play();
         wait (observed == 1);
-        if (!seen_down[0] || seen_key[0] != 8'hA1)
+        if (!seen_down[0] || seen_key[0] != (8'h80 + dut.playback_key_index(8'h21)))
             $fatal(1, "second take did not start on the recorded key");
         @(negedge clk); play_stop=1;
         @(negedge clk); play_stop=0;
         wait (observed == 2);
-        if (seen_down[1] || seen_key[1] != 8'hA1)
+        if (seen_down[1] || seen_key[1] != (8'h80 + dut.playback_key_index(8'h21)))
             $fatal(1, "Escape failed to release an active sequence voice");
         wait (!playing && !dut.cleanup_pending);
 
