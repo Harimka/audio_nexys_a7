@@ -1,0 +1,7 @@
+[simulation_top_elaboration] exit=0
+
+[board_top_elaboration_port_stub] exit=0
+
+[original_testbench_elaboration] exit=1
+<workspace>/audio_nexys_a7/src/tb/tb_audio_nexys_a7.sv:28: error: Wildcard named port connection (.*) did not find a matching identifier for port 20 (VGA_R).
+1 error(s) during elaboration.

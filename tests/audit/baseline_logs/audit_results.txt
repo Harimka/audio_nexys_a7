@@ -1,0 +1,47 @@
+[fifo] exit=0
+work/audio_nexys_a7/src/rtl/fifo.sv:1: warning: timescale for fifo inherited from another file.
+work/audit_tb.sv:1: ...: The inherited timescale is here.
+PASS FIFO: 20000 cycles, fill/drain, randomized simultaneous read/write, ordering
+work/audit_tb.sv:31: $finish called at 200020000 (1ps)
+
+
+[audio] exit=0
+work/audio_nexys_a7/src/rtl/tone_generator.sv:1: warning: timescale for tone_generator inherited from another file.
+work/audit_tb.sv:1: ...: The inherited timescale is here.
+PASS DDS: A4 ~440 Hz (880 wraps in ~2 s), phase holds under backpressure
+work/audit_tb.sv:55: $finish called at 961150000 (1ps)
+
+
+[pwm] exit=0
+work/audio_nexys_a7/src/rtl/pwm.sv:1: warning: timescale for pwm inherited from another file.
+work/audit_tb.sv:1: ...: The inherited timescale is here.
+PWM sample=0 high_ticks=1/1024
+PWM sample=32768 high_ticks=513/1024
+PWM sample=65535 high_ticks=1024/1024
+PASS PWM: period, quantization, enable on empty; zero input gives one high tick
+work/audit_tb.sv:85: $finish called at 71700000 (1ps)
+
+
+[buttons] exit=0
+work/audio_nexys_a7/src/rtl/button_ctrl.sv:1: warning: timescale for button_ctrl inherited from another file.
+work/audit_tb.sv:1: ...: The inherited timescale is here.
+PASS BUTTON CONTROL: defaults, toggle, saturation, note wrap
+work/audit_tb.sv:109: $finish called at 510000 (1ps)
+
+
+[reset] exit=0
+work/audio_nexys_a7/src/rtl/reset_button_debouncer.sv:1: warning: timescale for reset_button_debouncer inherited from another file.
+work/audit_tb.sv:1: ...: The inherited timescale is here.
+OBSERVATION reset startup in 4-state sim: rst_n=x (no manual reset yet)
+REPRODUCED RESET ISSUE: rst_n remains 1 after PLL lock is lost
+work/audit_tb.sv:126: $finish called at 10000000 (1ps)
+
+
+[vga] exit=0
+work/audio_nexys_a7/src/rtl/display_ctrl.sv:1: warning: timescale for display_ctrl inherited from another file.
+work/audit_tb.sv:1: ...: The inherited timescale is here.
+VGA VS transition: x=1 y=600 level=1
+VGA VS transition: x=1 y=604 level=0
+PASS VGA geometry: 1056x628 total, 480000 active pixels, HS=128 pixels, VS=4 lines
+REPRODUCED VGA ISSUE: VS differs from configured front porch by 2110 pixel clocks/frame
+work/audit_tb.sv:158: $finish called at 13263380000 (1ps)

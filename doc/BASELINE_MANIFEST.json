@@ -1,0 +1,171 @@
+{
+  "input_archive": "audio_nexys_a7.zip",
+  "sha256": "bb9cf8d72cd6a96271b7aa9f5ec1f0d84d326d8b62a7760b20e5fc40347ec687",
+  "source_files": [
+    {
+      "path": ".gitignore",
+      "sha256": "04878aeab5eac7415f68a1c6641294ddb4ef3521e179aba3c5b0420c38feeb9f"
+    },
+    {
+      "path": "Makefile",
+      "sha256": "380ae79e68d62e6b258b26de2d5247964893ce96ab00cf2205904d5a0d74dde6"
+    },
+    {
+      "path": "README.md",
+      "sha256": "6d7829c4677cbb33eafc4e40f9d9402c0a9a951691f3008bb35d68dfba0580ff"
+    },
+    {
+      "path": "doc/1_О_цифровом_звуке.md",
+      "sha256": "3efb7f83948ab0df95369eea98be7b0b991f4eefe46fdb20f99d3b4e170f29da"
+    },
+    {
+      "path": "doc/2_О работе графики.pdf",
+      "sha256": "f7e6f7e946dd2f0263d071d0b47752765d532fa3ead70c6a6bd2f6277ae7f154"
+    },
+    {
+      "path": "doc/3_Описание демо.md",
+      "sha256": "76842873b36fa2e1365bfc02ca89f5a39cf3a1721178dc981a8db2ee73d3e675"
+    },
+    {
+      "path": "doc/4_Инструкция_Vivado.pdf",
+      "sha256": "4583e00bd49b2d1b71418f411489e7f31298268cf6ac0d0555432c0a372e25eb"
+    },
+    {
+      "path": "doc/DEPENDENCIES.md",
+      "sha256": "b16f14637ef801ecab929051e6fadc5cb3c0421bd5d1253ca7357a62f7ae603c"
+    },
+    {
+      "path": "doc/image/audio_nexys_a7.drawio.png",
+      "sha256": "f36fafe01d9eefbda6040776bf3496d2510a73e3ad71d737642d56b7e5aae058"
+    },
+    {
+      "path": "doc/image/bitstream_done.png",
+      "sha256": "1f3f0bb39e172cfd141d4e8d74dd424f6c69dfe1eed8b2b51171c91891f90055"
+    },
+    {
+      "path": "doc/image/bitstream_selection.png",
+      "sha256": "810dec558c8208e421d1b9b302f85588d12b8bb5449838e4aa41acc7397a3ef0"
+    },
+    {
+      "path": "doc/image/connecting_board.png",
+      "sha256": "0b4629b8670e0c45856b8f808c366e5a8b91384fa746763fc601c95d856cc4a8"
+    },
+    {
+      "path": "doc/image/digital_sound_theory.png",
+      "sha256": "696200f84eae7e308e363f8e27bedcdb2fd894182f593c9dd13c8b525b826106"
+    },
+    {
+      "path": "doc/image/graphical_interface.png",
+      "sha256": "2f51514658cb2b696538502cd6461d5f05c0e57fec845a6509ee7b4f1e591505"
+    },
+    {
+      "path": "doc/image/loading_bitstream.png",
+      "sha256": "0ac0f4312d503bc12b5de4703017f9bf9ddb8771740b58b46eea81892c935d6a"
+    },
+    {
+      "path": "doc/image/pwm_intersective.png",
+      "sha256": "645b93b855381ec2d4dbecfb5cb36c866c309f716c54e1a625edc28ca4c04288"
+    },
+    {
+      "path": "doc/image/stand.jpg",
+      "sha256": "ca4f827a6dcd46bb95d3ea3ad8dfb457e72a04feaa0546ed650df14f97024d04"
+    },
+    {
+      "path": "doc/image/vivado_launch.png",
+      "sha256": "670df99c5615367b4354dfa528a19a7418dc04903ca72d78d5382890753fd75b"
+    },
+    {
+      "path": "doc/image/vivado_warning.png",
+      "sha256": "fa20f453ac61286b76c7656cefd61d7775d1f6b91284dd0a69844a3730d68917"
+    },
+    {
+      "path": "doc/nexys-a7_rm.pdf",
+      "sha256": "1901f8e2f446c64d0ef08b015a30a0617a36dbd364f2575abe51f549d86d1b2a"
+    },
+    {
+      "path": "src/ipcores/clk_wiz_0/clk_wiz_0.xci",
+      "sha256": "24df469a2aa236babe42a79ee5bd642b3a84ea9b51fb683851b5b3a55228c11a"
+    },
+    {
+      "path": "src/ipcores/clk_wiz_0/doc/clk_wiz_v6_0_changelog.txt",
+      "sha256": "6fd253f7517c1b18bb1db347ee51a3c2970b1878ccb6f32be405414a5688def4"
+    },
+    {
+      "path": "src/rtl/button_ctrl.sv",
+      "sha256": "3e599776e9d9ff705e5fd74f611bad25116fccb60272d2276b1b4de4f128ffd1"
+    },
+    {
+      "path": "src/rtl/button_debouncer.sv",
+      "sha256": "1d630a0707248a8d48c7f3568a990a61e6e8c93117141bb6c450025f9d5ea71c"
+    },
+    {
+      "path": "src/rtl/display_ctrl.sv",
+      "sha256": "fec622f8933a47b03505bd4c6726d6c9e17dc93ccf3613ac7999205db63a5195"
+    },
+    {
+      "path": "src/rtl/fifo.sv",
+      "sha256": "08c01e8df76eb582180b635bd238f187e344ce132f15d1fb44a3c84f4c7fec44"
+    },
+    {
+      "path": "src/rtl/font_rom.sv",
+      "sha256": "2c0095ee1bed546074a340af00b4e4078924e12428b58be6d6043b4ef4784554"
+    },
+    {
+      "path": "src/rtl/pwm.sv",
+      "sha256": "f2ec1d2719ad6ceda1febdddef39d09be99e093c393e155364f52d3a3f467828"
+    },
+    {
+      "path": "src/rtl/reset_button_debouncer.sv",
+      "sha256": "b83a9d21e280bb656c55dc6836eb4dc9b0ec786980a7edd5072401186e103ff9"
+    },
+    {
+      "path": "src/rtl/reset_sync.sv",
+      "sha256": "798d276a704995031a5241536670a08adb939defc07ba2892067c30e8ddd937b"
+    },
+    {
+      "path": "src/rtl/sber_logo_rom.sv",
+      "sha256": "d1852f1f0a492f6967a1df0a0b74c7c86c46a17b7992b0d6a82eaec821852f0e"
+    },
+    {
+      "path": "src/rtl/sevseg_ctrl.sv",
+      "sha256": "2f5e0188eadf3eccf5abc33edc1b42606525bb98574314a9c30a65bf0523e051"
+    },
+    {
+      "path": "src/rtl/tone_generator.sv",
+      "sha256": "50683ec9c6fccf7b9b846777a14f2c46d511afa32af59f7d631ebeca8fe2ad73"
+    },
+    {
+      "path": "src/rtl/vga_demo.sv",
+      "sha256": "12ee2ae617f1d61994d5795b2990d0e90fc017893e3ad96526d5a1409663346d"
+    },
+    {
+      "path": "src/sim/Makefile",
+      "sha256": "d2ef4a1aa6d9d20c58fbdbb8f1b516bf5429f44578294f354b0acf0613b24e12"
+    },
+    {
+      "path": "src/sim/main_audio.cpp",
+      "sha256": "18fde42474a81f8c79d16837240b843acfdb500d417963f91a1f6e2dfd324582"
+    },
+    {
+      "path": "src/sim/top_audio.sv",
+      "sha256": "243ca0b302981f12785f890f09bc6a0c8c3e19278b066a148afe748623b39cea"
+    },
+    {
+      "path": "src/tb/tb_audio_nexys_a7.sv",
+      "sha256": "73890994f7b6ead85a3b003d174f4bcdc55435d9b8df35ddf546c8ec1198f9e1"
+    },
+    {
+      "path": "src/tcl/deploy.tcl",
+      "sha256": "963dddeba4e6421a7cdaf8628d453402b7effffcfdd7e5fdf9ecdb3c69004885"
+    },
+    {
+      "path": "src/top/audio_nexys_a7.sv",
+      "sha256": "97b3a4716efa682e270a3c1f740cb7cc7c8270842b3a076fa8eeafdb0cbad078"
+    },
+    {
+      "path": "src/top/audio_nexys_a7.xdc",
+      "sha256": "f2529aa394f31e10f59209c4bacfd0bf19e3609cfcbec50fbaaa5a6c3735803f"
+    }
+  ],
+  "notes": "Hashes describe original ZIP. Root README and .gitignore are updated; original README is doc/BASELINE_README.md. Original RTL/build/doc files otherwise preserved."
+}

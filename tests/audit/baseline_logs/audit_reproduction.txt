@@ -1,0 +1,26 @@
+PASS FIFO: 20000 cycles, fill/drain, randomized simultaneous read/write, ordering
+<workspace>/audit_tb.sv:31: $finish called at 200020000 (1ps)
+PASS DDS: A4 ~440 Hz (880 wraps in ~2 s), phase holds under backpressure
+<workspace>/audit_tb.sv:55: $finish called at 961150000 (1ps)
+PWM sample=0 high_ticks=1/1024
+PWM sample=32768 high_ticks=513/1024
+PWM sample=65535 high_ticks=1024/1024
+PASS PWM: period, quantization, enable on empty; zero input gives one high tick
+<workspace>/audit_tb.sv:85: $finish called at 71700000 (1ps)
+PASS BUTTON CONTROL: defaults, toggle, saturation, note wrap
+<workspace>/audit_tb.sv:109: $finish called at 510000 (1ps)
+OBSERVATION reset startup in 4-state sim: rst_n=x (no manual reset yet)
+REPRODUCED RESET ISSUE: rst_n remains 1 after PLL lock is lost
+<workspace>/audit_tb.sv:126: $finish called at 10000000 (1ps)
+VGA VS transition: x=1 y=600 level=1
+VGA VS transition: x=1 y=604 level=0
+PASS VGA geometry: 1056x628 total, 480000 active pixels, HS=128 pixels, VS=4 lines
+REPRODUCED VGA ISSUE: VS differs from configured front porch by 2110 pixel clocks/frame
+<workspace>/audit_tb.sv:158: $finish called at 13263380000 (1ps)
+[simulation top] exit=0
+[board top, port-only clock stub] exit=0
+[original testbench (failure expected for this archive)] exit=1
+<workspace>/audio_nexys_a7/src/tb/tb_audio_nexys_a7.sv:28: error: Wildcard named port connection (.*) did not find a matching identifier for port 20 (VGA_R).
+1 error(s) during elaboration.
+
+These checks do not perform Vivado synthesis, timing analysis, or hardware validation.
