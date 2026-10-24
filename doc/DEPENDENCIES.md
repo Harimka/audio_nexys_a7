@@ -34,6 +34,18 @@ IP `clk_wiz_0` создан в Vivado 2023.2. В более новых верс�
 sudo apt install build-essential verilator libsdl2-dev
 ```
 
+## 4. MIDI-стендовый мост (по желанию)
+
+Для `tools/midi_uart_bridge.py` на Linux нужны Python 3, `mido`, `python-rtmidi` и `pyserial`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install mido python-rtmidi pyserial
+```
+
+Ноутбук принимает USB-MIDI от Arturia и пересылает стандартные MIDI Note On/Off байты через USB-UART к FPGA. Это требует ноутбука во время игры; допустимость такой схемы в финальном задании нужно уточнить.
+
 ## 3. Для заданий хакатона (по желанию)
 
 Эти инструменты упоминаются в документации или понадобятся для типичных направлений работы. Для самого демо-проекта они не нужны.

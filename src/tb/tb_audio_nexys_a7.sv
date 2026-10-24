@@ -1,5 +1,6 @@
 module tb_audio_nexys_a7 ();
   bit               CLK100MHZ;
+  bit               UART_TXD_IN = 1'b1;
   bit     [15:0]    SW;
   //
   logic             DP, CG, CF, CE, CD, CC, CB, CA;
@@ -9,6 +10,8 @@ module tb_audio_nexys_a7 ();
   //
   logic             AUD_PWM;
   logic             AUD_SD;
+  logic   [ 3:0]    VGA_R, VGA_G, VGA_B;
+  logic             VGA_HS, VGA_VS;
   
   //----------- CLK -//
     always #2

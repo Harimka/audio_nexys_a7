@@ -16,6 +16,12 @@ for tool in ('iverilog','vvp'):
 cases={'fifo':['fifo'],'audio':['tone_generator'],'pwm':['pwm'],
        'buttons':['button_ctrl'],'reset':['reset_button_debouncer'],'vga':['display_ctrl']}
 with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
+    midi_target=str(pathlib.Path(temp)/'midi.vvp')
+    subprocess.run(['iverilog','-g2012','-s','tb_midi_uart_receiver','-o',midi_target,
+                    str(here.parent/'midi/tb_midi_uart_receiver.sv'),
+                    str(src/'rtl/uart_rx.sv'),str(src/'rtl/midi_uart_receiver.sv'),
+                    str(src/'rtl/midi_wavetable.sv')],check=True)
+    subprocess.run(['vvp',midi_target],check=True,timeout=60)
     for name,modules in cases.items():
         target=str(pathlib.Path(temp)/(name+'.vvp'))
         subprocess.run(['iverilog','-g2012','-s','audit_'+name,'-o',target,
@@ -25,7 +31,7 @@ with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
     checks={
       'simulation top': ['-s','top_audio',str(src/'sim/top_audio.sv')]+rtl,
       'board top, port-only clock stub': ['-s','audio_nexys_a7',str(src/'top/audio_nexys_a7.sv'),str(here/'clk_wiz_0_stub.sv')]+rtl,
-      'original testbench (failure expected for this archive)': ['-s','tb_audio_nexys_a7',str(src/'tb/tb_audio_nexys_a7.sv'),str(src/'top/audio_nexys_a7.sv'),str(here/'clk_wiz_0_stub.sv')]+rtl,
+      'testbench elaboration': ['-s','tb_audio_nexys_a7',str(src/'tb/tb_audio_nexys_a7.sv'),str(src/'top/audio_nexys_a7.sv'),str(here/'clk_wiz_0_stub.sv')]+rtl,
     }
     for name,files in checks.items():
         proc=subprocess.run(['iverilog','-g2012','-tnull']+files,capture_output=True,text=True)
