@@ -525,13 +525,12 @@ module vga_daw_ui (
         // 8. Footer Keybinding Hints
         // -------------------------------------------------------------
         // Footer bar text at Y=572..579
-        else if (v_coord >= 10'd572 && v_coord < 10'd580 && h_coord >= 11'd20 && h_coord < 11'd780) begin
-            in_text  = 1'b1;
-            char_row = v_coord - 10'd572;
-            char_col = (h_coord - 11'd20) & 3'b111;
-
-            // "F9/SPACE REC" at X=20..115
-            if (h_coord < 11'd120) begin
+        else if (v_coord >= 10'd572 && v_coord < 10'd580) begin
+            // "F9/SPACE REC" at X=20..115 (12 chars)
+            if (h_coord >= 11'd20 && h_coord < 11'd116) begin
+                in_text    = 1'b1;
+                char_row   = v_coord - 10'd572;
+                char_col   = (h_coord - 11'd20) & 3'b111;
                 char_color = COLOR_ALERT;
                 case ((h_coord - 11'd20) >> 3)
                     0: char_code = "F"; 1: char_code = "9"; 2: char_code = "/"; 3: char_code = "S"; 4: char_code = "P";
@@ -540,8 +539,11 @@ module vga_daw_ui (
                     default: char_code = " ";
                 endcase
             end
-            // "ENTER PLAY" at X=150..229
+            // "ENTER PLAY" at X=150..229 (10 chars)
             else if (h_coord >= 11'd150 && h_coord < 11'd230) begin
+                in_text    = 1'b1;
+                char_row   = v_coord - 10'd572;
+                char_col   = (h_coord - 11'd150) & 3'b111;
                 char_color = COLOR_PLAY;
                 case ((h_coord - 11'd150) >> 3)
                     0: char_code = "E"; 1: char_code = "N"; 2: char_code = "T"; 3: char_code = "E"; 4: char_code = "R";
@@ -549,8 +551,11 @@ module vga_daw_ui (
                     default: char_code = " ";
                 endcase
             end
-            // "ESC STOP" at X=260..323
+            // "ESC STOP" at X=260..323 (8 chars)
             else if (h_coord >= 11'd260 && h_coord < 11'd324) begin
+                in_text    = 1'b1;
+                char_row   = v_coord - 10'd572;
+                char_col   = (h_coord - 11'd260) & 3'b111;
                 char_color = COLOR_INK;
                 case ((h_coord - 11'd260) >> 3)
                     0: char_code = "E"; 1: char_code = "S"; 2: char_code = "C"; 3: char_code = " ";
@@ -558,8 +563,11 @@ module vga_daw_ui (
                     default: char_code = " ";
                 endcase
             end
-            // "TAB/BS TRACK" at X=355..450
+            // "TAB/BS TRACK" at X=355..450 (12 chars)
             else if (h_coord >= 11'd355 && h_coord < 11'd451) begin
+                in_text    = 1'b1;
+                char_row   = v_coord - 10'd572;
+                char_col   = (h_coord - 11'd355) & 3'b111;
                 char_color = COLOR_INK;
                 case ((h_coord - 11'd355) >> 3)
                     0: char_code = "T"; 1: char_code = "A"; 2: char_code = "B"; 3: char_code = "/"; 4: char_code = "B";
@@ -568,8 +576,11 @@ module vga_daw_ui (
                     default: char_code = " ";
                 endcase
             end
-            // "ARROWS WAVE" at X=480..567
+            // "ARROWS WAVE" at X=480..567 (11 chars)
             else if (h_coord >= 11'd480 && h_coord < 11'd568) begin
+                in_text    = 1'b1;
+                char_row   = v_coord - 10'd572;
+                char_col   = (h_coord - 11'd480) & 3'b111;
                 char_color = COLOR_INK;
                 case ((h_coord - 11'd480) >> 3)
                     0: char_code = "A"; 1: char_code = "R"; 2: char_code = "R"; 3: char_code = "O"; 4: char_code = "W";
@@ -578,8 +589,11 @@ module vga_daw_ui (
                     default: char_code = " ";
                 endcase
             end
-            // "NEXYS A7 FPGA" at X=670..773
+            // "NEXYS A7 FPGA" at X=670..773 (13 chars)
             else if (h_coord >= 11'd670 && h_coord < 11'd774) begin
+                in_text    = 1'b1;
+                char_row   = v_coord - 10'd572;
+                char_col   = (h_coord - 11'd670) & 3'b111;
                 char_color = COLOR_ACCENT;
                 case ((h_coord - 11'd670) >> 3)
                     0: char_code = "N"; 1: char_code = "E"; 2: char_code = "X"; 3: char_code = "Y"; 4: char_code = "S";
