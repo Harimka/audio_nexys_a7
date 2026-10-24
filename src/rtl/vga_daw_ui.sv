@@ -23,7 +23,7 @@ module vga_daw_ui (
     input  wire [27:0] event_counts,
     input  wire [19:0] preview_counts,
     input  wire [319:0] preview_notes,
-    input  wire [447:0] roll_matrix,
+    input  wire [895:0] roll_matrix,
     input  wire        active_note_valid,
     input  wire [2:0]  active_note,
     input  wire [1:0]  active_octave,
@@ -52,7 +52,7 @@ module vga_daw_ui (
     // Playhead and window shift timing (0.25 s per step @ 39.941 MHz)
     localparam [23:0] STEP_TICKS = 24'd9_985_249;
     reg [23:0] playhead_timer;
-    reg [4:0]  playhead_step; // 0..23 (supports up to 24 steps = 6s before wrap)
+    reg [4:0]  playhead_step; // 0..31 (supports 32 steps = 8.0s before wrap)
     wire       playhead_active;
 
     assign playhead_active = (|recording) || (|playing) || audio_play;
@@ -64,7 +64,7 @@ module vga_daw_ui (
         end else if (playhead_active) begin
             if (playhead_timer >= STEP_TICKS) begin
                 playhead_timer <= 24'd0;
-                if (playhead_step >= 5'd23)
+                if (playhead_step >= 5'd31)
                     playhead_step <= 5'd0;
                 else
                     playhead_step <= playhead_step + 1'b1;
@@ -77,15 +77,15 @@ module vga_daw_ui (
         end
     end
 
-    // 8-step window shift logic:
-    // Steps 0..15 -> window_offset = 0 (displays steps 1..16)
-    // Steps 16..23 -> window_offset = 8 (displays steps 9..24)
+    // 16-step whole-measure page shift logic:
+    // Page 0 (steps 0..15):  window_offset = 0  (displays steps 1..16)
+    // Page 1 (steps 16..31): window_offset = 16 (displays steps 17..32)
     wire [4:0] window_offset;
     wire [3:0] visible_step;
     wire [10:0] playhead_x;
 
-    assign window_offset = (playhead_step >= 5'd16) ? 5'd8 : 5'd0;
-    assign visible_step  = (playhead_step >= 5'd16) ? (playhead_step[3:0] - 4'd8) : playhead_step[3:0];
+    assign window_offset = playhead_step[4] ? 5'd16 : 5'd0;
+    assign visible_step  = playhead_step[3:0]; // 0..15 on both pages
     assign playhead_x    = 11'd68 + visible_step * 11'd28;
 
     // REC blinking marker generator
@@ -275,11 +275,11 @@ module vga_daw_ui (
                 5: char_code = " "; 6: char_code = "R"; 7: char_code = "O"; 8: char_code = "L"; 9: char_code = "L";
                 10: char_code = " "; 11: char_code = "("; 12: char_code = "S"; 13: char_code = "T"; 14: char_code = "E";
                 15: char_code = "P"; 16: char_code = "S"; 17: char_code = " ";
-                18: char_code = (window_offset == 0) ? "0" : "0";
-                19: char_code = (window_offset == 0) ? "1" : "9";
+                18: char_code = (window_offset == 0) ? "0" : "1";
+                19: char_code = (window_offset == 0) ? "1" : "7";
                 20: char_code = "."; 21: char_code = ".";
-                22: char_code = (window_offset == 0) ? "1" : "2";
-                23: char_code = (window_offset == 0) ? "6" : "4";
+                22: char_code = (window_offset == 0) ? "1" : "3";
+                23: char_code = (window_offset == 0) ? "6" : "2";
                 24: char_code = " "; 25: char_code = "/"; 26: char_code = " "; 27: char_code = "4"; 28: char_code = " ";
                 29: char_code = "O"; 30: char_code = "C"; 31: char_code = "T"; 32: char_code = " "; 33: char_code = "C";
                 34: char_code = "1"; 35: char_code = "."; 36: char_code = "."; 37: char_code = "B"; 38: char_code = "4";
@@ -297,7 +297,7 @@ module vga_daw_ui (
                 disp_step_num = window_offset + ((h_coord - 11'd68) / 28) + 1;
                 char_color = (((h_coord - 11'd68) / 28) % 4 == 0) ? COLOR_ACCENT : COLOR_DIM;
                 if ((text_x - 6) < 8)
-                    char_code = (disp_step_num >= 20) ? "2" : ((disp_step_num >= 10) ? "1" : "0");
+                    char_code = (disp_step_num >= 30) ? "3" : ((disp_step_num >= 20) ? "2" : ((disp_step_num >= 10) ? "1" : "0"));
                 else
                     char_code = dec_digit(disp_step_num);
             end
@@ -633,6 +633,7 @@ module vga_daw_ui (
 
     integer r_idx, s_idx, v_idx;
     reg [4:0] roll_pitch;
+    reg [9:0] roll_bit_idx;
     reg [3:0] roll_step;
 
     always_comb begin
@@ -730,7 +731,8 @@ module vga_daw_ui (
 
                 // Check active cell in roll_matrix
                 if (s_idx < 16 && roll_pitch < 28) begin
-                    if (roll_matrix[roll_pitch * 16 + s_idx]) begin
+                    roll_bit_idx = (roll_pitch << 5) | (window_offset & 5'd16) | (s_idx & 4'hF);
+                    if (roll_matrix[roll_bit_idx]) begin
                         // 2px margin inside cell
                         if (((h_coord - 11'd68) % 28 >= 2) && ((h_coord - 11'd68) % 28 < 26) &&
                             ((v_coord - 10'd92) % 16 >= 2) && ((v_coord - 10'd92) % 16 < 14)) begin

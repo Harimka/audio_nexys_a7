@@ -21,7 +21,7 @@ module tb_melody_recorder;
     wire [6:0] event_count;
     wire [4:0] preview_count;
     wire [79:0] preview_notes;
-    wire [447:0] roll_matrix;
+    wire [895:0] roll_matrix;
     integer observed = 0;
     integer i;
     reg [1:0] seen_down;

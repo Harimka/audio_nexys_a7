@@ -17,7 +17,7 @@ module tb_vga_daw_ui;
     reg [27:0] event_counts = 0;
     reg [19:0] preview_counts = 0;
     reg [319:0] preview_notes = 0;
-    reg [447:0] roll_matrix = 0;
+    reg [895:0] roll_matrix = 0;
     reg        active_note_valid = 0;
     reg [2:0]  active_note = 0;
     reg [1:0]  active_octave = 0;
@@ -92,9 +92,9 @@ module tb_vga_daw_ui;
         playing = 4'd0;
         event_counts = {7'd0, 7'd0, 7'd0, 7'd14}; // Track 1 has 14 events (0x0E)
 
-        // Set a test note at C3 (pitch 14, step 0) in roll_matrix
-        // roll_matrix bit index: pitch * 16 + step = 14 * 16 + 0 = 224
-        roll_matrix[224] = 1'b1;
+        // Set test notes at C3 (pitch 14): step 0 (bit 448) and step 16 (bit 464)
+        roll_matrix[448] = 1'b1;
+        roll_matrix[464] = 1'b1;
 
         #20;
 
@@ -152,14 +152,16 @@ module tb_vga_daw_ui;
         check_pixel(11'd68, 10'd200, COLOR_ALERT, "Red Playhead line at Step 0 (X=68)");
         check_pixel(11'd69, 10'd200, COLOR_ALERT, "Red Playhead line at Step 0 (X=69)");
 
-        // Fast-forward playhead to step 16 to verify 8-step window shift
+        // Fast-forward playhead to step 16 to verify 16-step whole-measure page shift
         dut.playhead_step = 5'd16;
         #2;
-        // Window offset should now be 8
-        if (dut.window_offset !== 5'd8)
-            $fatal(1, "FAIL: window_offset must be 8 at step 16!");
-        // Visible step should now be 16 - 8 = 8 (X = 68 + 8*28 = 292)
-        check_pixel(11'd292, 10'd200, COLOR_ALERT, "Red Playhead line shifted to Col 8 (X=292)");
+        // Window offset should now be 16 (Page 1)
+        if (dut.window_offset !== 5'd16)
+            $fatal(1, "FAIL: window_offset must be 16 at step 16!");
+        // Visible step should now start at Col 0 (X = 68..69)
+        check_pixel(11'd68, 10'd200, COLOR_ALERT, "Red Playhead line at Page 1 Col 0 (X=68)");
+        // Page 1 note cell active at Step 16 (Col 0, C3 row): (72, 304)
+        check_pixel(11'd72, 10'd304, COLOR_ACCENT, "Page 1 C3 note cell active at Step 16");
 
         audio_play = 1'b0;
         dut.playhead_step = 5'd0;

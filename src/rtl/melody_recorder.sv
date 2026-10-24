@@ -30,7 +30,7 @@ module melody_recorder #(
     output reg  [6:0] event_count,
     output reg  [4:0] preview_count,
     output reg  [79:0] preview_notes,
-    output reg  [447:0] roll_matrix
+    output reg  [895:0] roll_matrix
 );
     localparam integer PTR_BITS = (EVENT_DEPTH <= 2) ? 1 : $clog2(EVENT_DEPTH);
     localparam [6:0] DEPTH_VALUE = EVENT_DEPTH[6:0];
@@ -57,18 +57,18 @@ module melody_recorder #(
     reg rendering;
     reg render_closing;
     reg [7:0] render_close_key;
-    reg [4:0] render_close_step;
+    reg [5:0] render_close_step;
     reg render_commit_pending;
-    reg [447:0] roll_build_matrix;
+    reg [895:0] roll_build_matrix;
     reg [PTR_BITS-1:0] render_index;
     reg [31:0] render_time;
     reg [31:0] render_tail_samples;
     reg [7:0] render_key_index;
     reg [4:0] render_pitch;
-    reg [3:0] render_start_step [0:255];
+    reg [4:0] render_start_step [0:255];
     reg [4:0] render_key_pitch [0:255];
     reg [255:0] render_key_active;
-    reg [4:0] render_end_step;
+    reg [5:0] render_end_step;
     reg [3:0] render_cell;
     integer render_i;
     integer render_j;
@@ -126,22 +126,22 @@ module melody_recorder #(
             event_count <= 7'd0;
             preview_count <= 5'd0;
             preview_notes <= 80'd0;
-            roll_matrix <= 448'd0;
-            roll_build_matrix <= 448'd0;
+            roll_matrix <= 896'd0;
+            roll_build_matrix <= 896'd0;
             recording <= 1'b0;
             playing <= 1'b0;
             cleanup_pending <= 1'b0;
             rendering <= 1'b0;
             render_closing <= 1'b0;
             render_close_key <= 8'd0;
-            render_close_step <= 5'd0;
+            render_close_step <= 6'd0;
             render_commit_pending <= 1'b0;
             render_index <= {PTR_BITS{1'b0}};
             render_time <= 32'd0;
             render_tail_samples <= 32'd0;
             render_key_index <= 8'd0;
             render_pitch <= 5'd0;
-            render_end_step <= 5'd0;
+            render_end_step <= 6'd0;
             render_cell <= 4'd0;
             render_key_active <= 256'd0;
             cleanup_index <= 8'd0;
@@ -149,7 +149,7 @@ module melody_recorder #(
             for (i = 0; i < 256; i = i + 1) begin
                 playback_note[i] <= 3'd0;
                 playback_octave[i] <= 3'd3;
-                render_start_step[i] <= 4'd0;
+                render_start_step[i] <= 5'd0;
                 render_key_pitch[i] <= 5'd0;
             end
         end else begin
@@ -163,8 +163,8 @@ module melody_recorder #(
                     event_count <= 7'd0;
                     preview_count <= 5'd0;
                     preview_notes <= 80'd0;
-                    roll_matrix <= 448'd0;
-                    roll_build_matrix <= 448'd0;
+                    roll_matrix <= 896'd0;
+                    roll_build_matrix <= 896'd0;
                     write_index <= {PTR_BITS{1'b0}};
                     elapsed_samples <= 32'd0;
                     render_time <= 32'd0;
@@ -222,15 +222,15 @@ module melody_recorder #(
                         render_key_pitch[playback_key_index(key_mem[render_index])] <=
                             octave_mem[render_index] * 5'd7 + note_mem[render_index];
                         render_key_active[playback_key_index(key_mem[render_index])] <=
-                            ((render_time + delta_mem[render_index]) / UI_STEP_SAMPLES) < 16;
+                            ((render_time + delta_mem[render_index]) / UI_STEP_SAMPLES) < 32;
                     end else if (render_key_active[playback_key_index(key_mem[render_index])]) begin
                         render_end_step <= (render_time + delta_mem[render_index] + UI_STEP_SAMPLES - 1'b1) / UI_STEP_SAMPLES;
-                        for (render_i = 0; render_i < 16; render_i = render_i + 1) begin
+                        for (render_i = 0; render_i < 32; render_i = render_i + 1) begin
                             if (render_i >= render_start_step[playback_key_index(key_mem[render_index])] &&
                                 (render_i < ((render_time + delta_mem[render_index] + UI_STEP_SAMPLES - 1'b1) / UI_STEP_SAMPLES) ||
                                  render_i == render_start_step[playback_key_index(key_mem[render_index])]))
                                 if (render_key_pitch[playback_key_index(key_mem[render_index])] < 28)
-                                    roll_build_matrix[render_key_pitch[playback_key_index(key_mem[render_index])] * 16 + render_i] <= 1'b1;
+                                    roll_build_matrix[{render_key_pitch[playback_key_index(key_mem[render_index])], 5'b0} + render_i[4:0]] <= 1'b1;
                         end
                         render_key_active[playback_key_index(key_mem[render_index])] <= 1'b0;
                     end
@@ -238,16 +238,16 @@ module melody_recorder #(
                 end else if (!render_closing) begin
                     render_closing <= 1'b1;
                     render_close_key <= 8'd0;
-                    render_close_step <= 5'd0;
-                    if (((render_time + render_tail_samples + UI_STEP_SAMPLES - 1'b1) / UI_STEP_SAMPLES) > 16)
-                        render_end_step <= 5'd16;
+                    render_close_step <= 6'd0;
+                    if (((render_time + render_tail_samples + UI_STEP_SAMPLES - 1'b1) / UI_STEP_SAMPLES) > 32)
+                        render_end_step <= 6'd32;
                     else
                         render_end_step <= (render_time + render_tail_samples + UI_STEP_SAMPLES - 1'b1) / UI_STEP_SAMPLES;
-                end else if (render_close_step < 5'd16) begin
+                end else if (render_close_step < 6'd32) begin
                     if (render_key_active[render_close_key] && render_key_pitch[render_close_key] < 28 &&
                         render_close_step >= render_start_step[render_close_key] &&
                         (render_close_step < render_end_step || render_close_step == render_start_step[render_close_key]))
-                        roll_build_matrix[render_key_pitch[render_close_key] * 16 + render_close_step[3:0]] <= 1'b1;
+                        roll_build_matrix[{render_key_pitch[render_close_key], 5'b0} + render_close_step[4:0]] <= 1'b1;
                     render_close_step <= render_close_step + 1'b1;
                 end else if (render_close_key == 8'hFF) begin
                     rendering <= 1'b0;
@@ -255,7 +255,7 @@ module melody_recorder #(
                     render_commit_pending <= 1'b1;
                 end else begin
                     render_close_key <= render_close_key + 1'b1;
-                    render_close_step <= 5'd0;
+                    render_close_step <= 6'd0;
                 end
             end
             if (render_commit_pending) begin
