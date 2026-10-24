@@ -569,7 +569,22 @@ module audio_nexys_a7 (
     assign AUD_PWM = aud_pwm_loc ? 1'bz : 1'b0;
 //____________________________________________________________________________//
 
-  //------------- VGA workstation UI                              -------------//
+  //------------- VGA workstation UI & Scope Buffer               -------------//
+    wire [7:0] scope_rd_addr;
+    wire [7:0] scope_sample;
+
+    audio_scope_buffer scope_buffer_inst (
+      .clk_audio    ( clk_audio           ),
+      .aud_rst_n    ( aud_rst_n           ),
+      .sample_tick  ( sample_tick         ),
+      .audio_sample ( sample_scaled[15:8] ),
+      .audio_play   ( audio_play          ),
+      .pixel_clk    ( pixel_clk           ),
+      .pix_rst_n    ( pix_rst_n           ),
+      .frame_sync   ( v_sync              ),
+      .scope_x      ( scope_rd_addr       ),
+      .scope_sample ( scope_sample        )
+    );
     vga_daw_ui workstation_ui (
       .pixel_clk  ( pixel_clk ),
       .rst_n      ( pix_rst_n ),
@@ -588,6 +603,8 @@ module audio_nexys_a7 (
       .active_note_valid ( ui_state_pixel[5] ),
       .active_note     ( ui_state_pixel[2:0] ),
       .active_octave   ( ui_state_pixel[4:3] ),
+      .scope_sample    ( scope_sample        ),
+      .scope_rd_addr   ( scope_rd_addr       ),
       .red        ( red       ),
       .green      ( green     ),
       .blue       ( blue      )

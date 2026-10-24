@@ -32,6 +32,10 @@ keyboard_cases = {
     'tb_sevseg_digit_mask': ['sevseg_ctrl'],
 }
 
+audio_cases = {
+    'tb_audio_scope_buffer': ['audio_scope_buffer'],
+}
+
 vga_cases = {
     'tb_vga_daw_ui': ['vga_daw_ui', 'font_rom', 'waveform_lookup'],
 }
@@ -74,7 +78,20 @@ with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
                                check=True)
                 subprocess.run(['vvp', target], check=True, timeout=60)
 
-    # 3. Top-level elaboration checks
+    # 4. Audio scope buffer regression tests
+    audio_dir = here.parent / 'audio'
+    if audio_dir.exists():
+        for bench, modules in audio_cases.items():
+            bench_file = audio_dir / (bench + '.sv')
+            if bench_file.exists():
+                target = str(pathlib.Path(temp) / (bench + '.vvp'))
+                subprocess.run(['iverilog', '-g2012', '-s', bench, '-o', target,
+                                str(bench_file)] +
+                               [str(src / 'rtl' / (module + '.sv')) for module in modules],
+                               check=True)
+                subprocess.run(['vvp', target], check=True, timeout=60)
+
+    # 5. Top-level elaboration checks
     rtl = [str(p) for p in sorted((src / 'rtl').glob('*.sv'))]
     checks = {
         'simulation top': ['-s', 'top_audio', str(src / 'sim/top_audio.sv')] + rtl,

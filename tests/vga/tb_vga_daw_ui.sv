@@ -21,6 +21,8 @@ module tb_vga_daw_ui;
     reg        active_note_valid = 0;
     reg [2:0]  active_note = 0;
     reg [1:0]  active_octave = 0;
+    reg [7:0]  scope_sample = 8'd128;
+    wire [7:0] scope_rd_addr;
 
     wire [3:0] red;
     wire [3:0] green;
@@ -55,6 +57,8 @@ module tb_vga_daw_ui;
         .active_note_valid  ( active_note_valid  ),
         .active_note        ( active_note        ),
         .active_octave      ( active_octave      ),
+        .scope_sample       ( scope_sample       ),
+        .scope_rd_addr      ( scope_rd_addr      ),
         .red                ( red                ),
         .green              ( green              ),
         .blue               ( blue               )
@@ -176,10 +180,18 @@ module tb_vga_daw_ui;
         waveform_select = 2'd0;
 
         // Oscilloscope Screen:
-        // Background at (600, 240) should be dark scope CRT background
-        check_pixel(11'd600, 10'd240, COLOR_SCOPE_BG, "Scope dark CRT screen");
-        // Center zero axis at Y=210
-        check_pixel(11'd600, 10'd210, 12'h034, "Scope zero reticle grid axis");
+        // When silence (scope_sample = 128), wave_curve_y = 210, so trace is on center zero axis
+        scope_sample = 8'd128;
+        #2;
+        check_pixel(11'd600, 10'd210, COLOR_SCOPE_TRACE, "Scope trace on center axis during silence");
+        check_pixel(11'd600, 10'd240, COLOR_SCOPE_BG,    "Scope dark CRT background");
+
+        // When active sample (scope_sample = 168: offset +40 -> curve_y = 210 - 20 = 190)
+        scope_sample = 8'd168;
+        #2;
+        check_pixel(11'd600, 10'd190, COLOR_SCOPE_TRACE, "Scope trace deflected to Y=190");
+        check_pixel(11'd600, 10'd210, 12'h034,           "Scope zero reticle grid axis exposed under deflection");
+        scope_sample = 8'd128;
 
         // -------------------------------------------------------------
         // TEST 6: 4-TRACK SEQUENCER MATRIX

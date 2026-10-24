@@ -27,6 +27,9 @@ module vga_daw_ui (
     input  wire        active_note_valid,
     input  wire [2:0]  active_note,
     input  wire [1:0]  active_octave,
+    // Live audio oscilloscope buffer interface
+    input  wire [7:0]  scope_sample,
+    output wire [7:0]  scope_rd_addr,
     output reg  [3:0]  red,
     output reg  [3:0]  green,
     output reg  [3:0]  blue
@@ -104,33 +107,15 @@ module vga_daw_ui (
     // Pitch mapping for active live note input
     wire [4:0] current_active_pitch = {3'b0, active_octave} * 5'd7 + {2'b0, active_note};
 
-    // Waveform generator for live oscilloscope
-    reg [10:0] wave_x_offset;
-    wire [7:0] wave_phase_addr;
-    wire [31:0] wave_phase;
-    wire [15:0] wave_sample;
-    wire signed [16:0] wave_centered;
+    // Live oscilloscope signal computation
+    assign scope_rd_addr = (h_coord >= 11'd544 && h_coord < 11'd778) ? (h_coord[7:0] - 8'd32) : 8'd0;
+
+    wire signed [7:0] scope_centered = $signed(scope_sample) - 8'sd128;
     integer wave_curve_y;
 
     always_comb begin
-        wave_x_offset = (h_coord >= 11'd544 && h_coord < 11'd778) ? (h_coord - 11'd544) : 11'd0;
-    end
-
-    // Map 234 pixels to ~2 full cycles of the wave
-    assign wave_phase_addr = (wave_x_offset[7:0] << 1) + (wave_x_offset[7:0] >> 2);
-    assign wave_phase = {wave_phase_addr, 24'b0};
-
-    waveform_lookup wave_inst (
-        .phase           ( wave_phase      ),
-        .waveform_select ( waveform_select ),
-        .sample          ( wave_sample     )
-    );
-
-    assign wave_centered = $signed({1'b0, wave_sample}) - 17'sd32768;
-
-    always_comb begin
-        // Oscilloscope center line at Y=210, peak amplitude ~64 px
-        wave_curve_y = 210 - ($signed(wave_centered) >>> 9);
+        // Oscilloscope center line at Y=210, peak amplitude +/-64 px inside window Y=116..304
+        wave_curve_y = 210 - (scope_centered >>> 1);
     end
 
     // Functions for text representation
