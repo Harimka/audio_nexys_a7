@@ -1,6 +1,7 @@
 module tb_audio_nexys_a7 ();
   bit               CLK100MHZ;
   bit               UART_TXD_IN = 1'b1;
+  bit               PS2_CLK = 1'b1, PS2_DATA = 1'b1;
   bit     [15:0]    SW;
   //
   logic             DP, CG, CF, CE, CD, CC, CB, CA;

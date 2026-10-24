@@ -2,6 +2,8 @@ module audio_nexys_a7 (
   //----------- CLOCK                                            -------------//
     input   logic            CLK100MHZ ,
     input   logic            UART_TXD_IN,
+    input   logic            PS2_CLK   ,
+    input   logic            PS2_DATA  ,
   //----------- Switches                                         -------------//
     input   logic  [15:0]    SW        ,
   //----------- Buttons                                          -------------//
@@ -66,8 +68,10 @@ module audio_nexys_a7 (
     wire          aud_pwm_loc   ;
   //----------- Seven Segments Indicators                        -----------//
     wire  [31:0]  sevseg_32bit_hex_val ;
-    logic [ 3:0]  note_hex             ;   // note letter as a hex digit: C, D, E, F, 6 = G, A, b
-    wire  [ 3:0]  octave_digit         ;   // octave number 1..8
+    wire  [ 3:0]  keyboard_digit       ;
+    wire          keyboard_digit_valid;
+    wire          keyboard_rst_n       ;
+    logic         keyboard_digit_seen ;
   //----------- VGA Controller                                   -----------//
     wire  [10:0]  h_coord       ;   // pixel coordinates, 0..1055
     wire  [ 9:0]  v_coord       ;   //                    0..627
@@ -109,6 +113,11 @@ module audio_nexys_a7 (
         .clk      ( pixel_clk  ),
         .arst_n   ( rst_n      ),
         .rst_n    ( pix_rst_n  )
+      );
+      reset_sync keyboard_reset_sync (
+        .clk      ( clk_5mhz0d ),
+        .arst_n   ( rst_n      ),
+        .rst_n    ( keyboard_rst_n )
       );
 //____________________________________________________________________________//
 
@@ -176,42 +185,36 @@ module audio_nexys_a7 (
       .note      ( midi_note     ),
       .velocity  ( midi_velocity )
     );
+
+    ps2_keyboard_digit keyboard_digit_input (
+      .clk          ( clk_5mhz0d          ),
+      .rst_n        ( keyboard_rst_n      ),
+      .ps2_clk      ( PS2_CLK             ),
+      .ps2_data     ( PS2_DATA            ),
+      .digit        ( keyboard_digit      ),
+      .digit_valid  ( keyboard_digit_valid)
+    );
+
+    always_ff @(posedge clk_5mhz0d or negedge keyboard_rst_n) begin
+      if (!keyboard_rst_n)
+        keyboard_digit_seen <= 1'b0;
+      else if (keyboard_digit_valid)
+        keyboard_digit_seen <= 1'b1;
+    end
 //____________________________________________________________________________//
 
 //------------- Seven Segments Indicators                        -------------//
-  //----------- Digital clock divider                            -----------//
-    reg [12:0] digital_clock_divider;
-
-    always_ff @( posedge clk_5mhz0d ) begin
-      if ( !rst_n )
-        digital_clock_divider <= 0;
-      else
-        digital_clock_divider <= digital_clock_divider + 1;
-    end
-
   //----------- Seven Segments logic                             -----------//
     sevseg_ctrl seven_segments_controller (
-      .clk                    ( digital_clock_divider [12]   ),
-      .arst_n                 ( rst_n                        ),
-      .sevseg_32bit_hex_val   ( sevseg_32bit_hex_val         ),
+      .clk                    ( clk_5mhz0d                    ),
+      .arst_n                 ( keyboard_rst_n                ),
+      .sevseg_32bit_hex_val   ( sevseg_32bit_hex_val          ),
+      .digit_mask             ( keyboard_digit_seen ? 8'h01 : 8'h00 ),
       .seg_active_n           ( {CG, CF, CE, CD, CC, CB, CA} ),
       .don_active_n           ( DP                           ),
       .anodes                 ( AN                           )
     );
-    assign octave_digit = {1'b0, SW [2:0]} + 4'd1;
-    always_comb begin
-      case ( note_index )
-        3'd0:    note_hex = 'hc;  // C
-        3'd1:    note_hex = 'hd;  // D
-        3'd2:    note_hex = 'he;  // E
-        3'd3:    note_hex = 'hf;  // F
-        3'd4:    note_hex = 'h6;  // G
-        3'd5:    note_hex = 'ha;  // A
-        3'd6:    note_hex = 'hb;  // B
-        default: note_hex = 'hc;
-      endcase
-    end
-    assign sevseg_32bit_hex_val = {24'b0, note_hex, octave_digit};
+    assign sevseg_32bit_hex_val = {28'b0, keyboard_digit};
 //____________________________________________________________________________//
 
 //------------- Audio data path                                  -------------//

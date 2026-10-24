@@ -26,6 +26,17 @@ with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
                        [str(src / 'rtl' / (module + '.sv')) for module in midi_rtl],
                        check=True)
         subprocess.run(['vvp', target], check=True, timeout=60)
+    keyboard_cases = {
+        'tb_ps2_keyboard_digit': ['ps2_keyboard_digit'],
+        'tb_sevseg_digit_mask': ['sevseg_ctrl'],
+    }
+    for bench, modules in keyboard_cases.items():
+        target = str(pathlib.Path(temp) / (bench + '.vvp'))
+        subprocess.run(['iverilog', '-g2012', '-s', bench, '-o', target,
+                        str(here.parent / 'keyboard' / (bench + '.sv'))] +
+                       [str(src / 'rtl' / (module + '.sv')) for module in modules],
+                       check=True)
+        subprocess.run(['vvp', target], check=True, timeout=60)
     for name,modules in cases.items():
         target=str(pathlib.Path(temp)/(name+'.vvp'))
         subprocess.run(['iverilog','-g2012','-s','audit_'+name,'-o',target,

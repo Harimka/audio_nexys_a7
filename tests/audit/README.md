@@ -22,3 +22,5 @@ Reset-тест ускорен `CNT_WIDTH=4`; логика потери lock не
 
 
 MIDI regression: `tb_midi_protocol.sv` проверяет реальные значения MicroLab, running status, каналы, USB-payload и backpressure/ошибки; `tb_usb_midi_voice.sv` проверяет payload→wavetable, частоту A4 и velocity. Это тесты на границе уже полученных данных, не тест USB enumeration, PIC24 или физического J5. Контракт: `doc/MIDI_PROTOCOL.md`.
+
+Keyboard regression: `tests/keyboard/tb_ps2_keyboard_digit.sv` проверяет PS/2 Set-2 цифры 0–9 для верхнего ряда и цифрового блока, а также игнорирование break/extended событий; `tb_sevseg_digit_mask.sv` проверяет отображение только в AN[0] с остальными разрядами погашенными. Это RTL simulation, не замена Vivado implementation или проверки реальной клавиатуры.

@@ -1,25 +1,43 @@
-module sevseg_ctrl (
+module sevseg_ctrl #(
+  parameter integer SCAN_DIV_BITS = 13
+) (
   input  wire           clk                  ,
   input  wire           arst_n               ,
   input  wire   [31:0]  sevseg_32bit_hex_val ,
+  input  wire   [ 7:0]  digit_mask           ,
 
   output logic  [6:0]   seg_active_n         ,
   output logic          don_active_n         ,
   output logic  [7:0]   anodes
 );
+  reg [SCAN_DIV_BITS-1:0] scan_divider;
   reg [2:0]  sevseg_cntr;
+  reg [31:0] display_snapshot;
 
   always @(posedge clk or negedge arst_n) begin
     if ( !arst_n ) begin
-      seg_active_n    <= hex_to_seg(0);
+      seg_active_n    <= 7'b1111111;
       don_active_n    <= ~0;
-      anodes          <= ~8'b00000001;
+      anodes          <= 8'hFF;
+      scan_divider    <= 0;
+      display_snapshot <= 0;
       sevseg_cntr     <= 3'b0;
     end else begin
-      seg_active_n    <= hex_to_seg(sevseg_32bit_hex_val[sevseg_cntr*4 +: 4]);  //https://www.francisz.cn/download/IEEE_Standard_1800-2012%20SystemVerilog.pdf 11.5.1 Vector bit-select and part-select addressing
-      don_active_n    <= ~0;
-      anodes          <= ~(1 << sevseg_cntr);
-      sevseg_cntr     <= sevseg_cntr +1'b1;
+      scan_divider <= scan_divider + 1'b1;
+      if (&scan_divider) begin
+        if (sevseg_cntr == 0) display_snapshot <= sevseg_32bit_hex_val;
+        don_active_n <= 1'b1;
+        if (digit_mask[sevseg_cntr]) begin
+          seg_active_n <= hex_to_seg(sevseg_cntr == 0
+                                     ? sevseg_32bit_hex_val[3:0]
+                                     : display_snapshot[sevseg_cntr*4 +: 4]);
+          anodes <= ~(8'b00000001 << sevseg_cntr);
+        end else begin
+          seg_active_n <= 7'b1111111;
+          anodes <= 8'hFF;
+        end
+        sevseg_cntr <= sevseg_cntr + 1'b1;
+      end
     end
   end
 
