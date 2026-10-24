@@ -36,37 +36,57 @@ module audio_nexys_a7 (
     wire          rst_n        ;     // reset in the 5 MHz domain
     wire          aud_rst_n    ;     // rst_n released synchronously to clk_audio
     wire          pix_rst_n    ;     // rst_n released synchronously to pixel_clk
+
   //----------- Buttons state                                    -----------//
     logic         button_c, button_c_d, button_c_u;
     logic         button_u, button_u_d, button_u_u;
     logic         button_d, button_d_d, button_d_u;
     logic         button_l, button_l_d, button_l_u;
     logic         button_r, button_r_d, button_r_u;
+
   //----------- Audio management registers                       -----------//
     reg           play        ;
     reg  [3:0]    volume      ;
     reg  [2:0]    note_index  ;
+
+  //----------- Keyboard decoder outputs (audio domain)         -----------//
+    wire [ 3:0]   keyboard_digit       ;
+    wire          keyboard_digit_valid ;
+    wire [ 2:0]   keyboard_note_index  ;
+    wire [ 2:0]   keyboard_note_octave ;
+    wire          keyboard_note_event  ;
+    wire          keyboard_note_down   ;
+
   //----------- Audio data path                                  -----------//
-    wire  [15:0]  sample        ;
-    wire          valid         ;
-    wire          ready         ;
-    wire  [19:0]  vol_mult      ;
-    wire  [15:0]  sample_scaled ;
-    wire  [31:0]  fifo_wr_data  ;
-    wire          fifo_wr_en    ;
-    wire          fifo_full     ;
-    wire  [31:0]  fifo_rd_data  ;
-    wire          fifo_rd_en    ;
-    wire          fifo_empty    ;
-    wire          aud_pwm_loc   ;
-  //----------- Seven Segments Indicators                        -----------//
-    wire  [31:0]  sevseg_32bit_hex_val ;
-    logic [ 3:0]  note_hex             ;   // note letter as a hex digit: C, D, E, F, 6 = G, A, b
-    wire  [ 3:0]  octave_digit         ;   // octave number 1..8
+    wire [ 2:0]   audio_note_index     ;
+    wire [ 2:0]   audio_note_octave    ;
+    wire          audio_play           ;
+    wire [15:0]   sample               ;
+    wire          valid                ;
+    wire          ready                ;
+    wire [19:0]   vol_mult             ;
+    wire [15:0]   sample_scaled        ;
+    wire [31:0]   fifo_wr_data         ;
+    wire          fifo_wr_en           ;
+    wire          fifo_full            ;
+    wire [31:0]   fifo_rd_data         ;
+    wire          fifo_rd_en           ;
+    wire          fifo_empty           ;
+    wire          aud_pwm_loc          ;
+
+  //----------- Seven Segments Indicators & Safe CDC             -----------//
+    reg           digit_toggle_audio   ;
+    reg  [ 3:0]   digit_audio_latched  ;
+    (* ASYNC_REG = "TRUE" *) reg [1:0] digit_toggle_sync;
+    reg           digit_toggle_sync_d  ;
+    reg  [ 3:0]   digit_display        ;
+    reg           keyboard_digit_seen  ;
+    wire [31:0]   sevseg_32bit_hex_val ;
+
   //----------- VGA Controller                                   -----------//
-    wire  [10:0]  h_coord       ;   // pixel coordinates, 0..1055
-    wire  [ 9:0]  v_coord       ;   //                    0..627
-    wire  [ 3:0]  red, green, blue; // pixel color
+    wire [10:0]   h_coord       ;   // pixel coordinates, 0..1055
+    wire [ 9:0]   v_coord       ;   //                    0..627
+    wire [ 3:0]   red, green, blue; // pixel color
     // Timing signals - don't touch these:
     wire          h_sync, v_sync;   // horizontal & vertical synchronization
     wire          disp_enbl     ;   // image output is allowed
@@ -94,17 +114,17 @@ module audio_nexys_a7 (
 
   //----------- Reset synchronizers                              ---------//
     // rst_n comes from the 5 MHz domain, the other clocks are asynchronous to it
-      reset_sync audio_reset_sync (
-        .clk      ( clk_audio  ),
-        .arst_n   ( rst_n      ),
-        .rst_n    ( aud_rst_n  )
-      );
+    reset_sync audio_reset_sync (
+      .clk      ( clk_audio  ),
+      .arst_n   ( rst_n      ),
+      .rst_n    ( aud_rst_n  )
+    );
 
-      reset_sync pixel_reset_sync (
-        .clk      ( pixel_clk  ),
-        .arst_n   ( rst_n      ),
-        .rst_n    ( pix_rst_n  )
-      );
+    reset_sync pixel_reset_sync (
+      .clk      ( pixel_clk  ),
+      .arst_n   ( rst_n      ),
+      .rst_n    ( pix_rst_n  )
+    );
 //____________________________________________________________________________//
 
 //------------- IO Pads assertions                               -------------//
@@ -163,54 +183,85 @@ module audio_nexys_a7 (
       .note_index  ( note_index )
     );
 
+  //------------- Keyboard decoder                               -----------//
+  // Running in clk_audio eliminates multi-bit CDC crossing for audio control!
+    ps2_keyboard_digit #(
+      .FILTER_BITS    ( 8       ),
+      .TIMEOUT_CYCLES ( 200_000 ),
+      .LEGATO_STACK   ( 1       )
+    ) keyboard_digit_input (
+      .clk          ( clk_audio            ),
+      .rst_n        ( aud_rst_n            ),
+      .ps2_clk      ( PS2_CLK              ),
+      .ps2_data     ( PS2_DATA             ),
+      .digit        ( keyboard_digit       ),
+      .digit_valid  ( keyboard_digit_valid ),
+      .note_index   ( keyboard_note_index  ),
+      .note_octave  ( keyboard_note_octave ),
+      .note_event   ( keyboard_note_event  ),
+      .note_down    ( keyboard_note_down   )
+    );
+
+  //------------- Keyboard Digit CDC (audio -> 5 MHz)            -----------//
+  // Toggle handshake safely captures quasi-static digit values into 5 MHz domain
+    always_ff @(posedge clk_audio or negedge aud_rst_n) begin
+      if (!aud_rst_n) begin
+        digit_toggle_audio  <= 1'b0;
+        digit_audio_latched <= 4'd0;
+      end else if (keyboard_digit_valid) begin
+        digit_audio_latched <= keyboard_digit;
+        digit_toggle_audio  <= ~digit_toggle_audio;
+      end
+    end
+
+    always_ff @(posedge clk_5mhz0d or negedge rst_n) begin
+      if (!rst_n) begin
+        digit_toggle_sync   <= 2'b00;
+        digit_toggle_sync_d <= 1'b0;
+        digit_display       <= 4'd0;
+        keyboard_digit_seen <= 1'b0;
+      end else begin
+        digit_toggle_sync   <= {digit_toggle_sync[0], digit_toggle_audio};
+        digit_toggle_sync_d <= digit_toggle_sync[1];
+        if (digit_toggle_sync[1] ^ digit_toggle_sync_d) begin
+          digit_display       <= digit_audio_latched;
+          keyboard_digit_seen <= 1'b1;
+        end
+      end
+    end
+
 //____________________________________________________________________________//
 
 //------------- Seven Segments Indicators                        -------------//
-  //----------- Digital clock divider                            -----------//
-    reg [12:0] digital_clock_divider;
-
-    always_ff @( posedge clk_5mhz0d ) begin
-      if ( !rst_n )
-        digital_clock_divider <= 0;
-      else
-        digital_clock_divider <= digital_clock_divider + 1;
-    end
-
   //----------- Seven Segments logic                             -----------//
-    sevseg_ctrl seven_segments_controller (
-      .clk                    ( digital_clock_divider [12]   ),
-      .arst_n                 ( rst_n                        ),
-      .sevseg_32bit_hex_val   ( sevseg_32bit_hex_val         ),
+    sevseg_ctrl #(
+      .SCAN_DIV_BITS ( 13 )
+    ) seven_segments_controller (
+      .clk                    ( clk_5mhz0d                    ),
+      .arst_n                 ( rst_n                         ),
+      .sevseg_32bit_hex_val   ( sevseg_32bit_hex_val          ),
+      .digit_mask             ( keyboard_digit_seen ? 8'h01 : 8'h00 ),
       .seg_active_n           ( {CG, CF, CE, CD, CC, CB, CA} ),
-      .don_active_n           ( DP                           ),
-      .anodes                 ( AN                           )
+      .don_active_n           ( DP                            ),
+      .anodes                 ( AN                            )
     );
-    assign octave_digit = {1'b0, SW [2:0]} + 4'd1;
-    always_comb begin
-      case ( note_index )
-        3'd0:    note_hex = 'hc;  // C
-        3'd1:    note_hex = 'hd;  // D
-        3'd2:    note_hex = 'he;  // E
-        3'd3:    note_hex = 'hf;  // F
-        3'd4:    note_hex = 'h6;  // G
-        3'd5:    note_hex = 'ha;  // A
-        3'd6:    note_hex = 'hb;  // B
-        default: note_hex = 'hc;
-      endcase
-    end
-    assign sevseg_32bit_hex_val = {24'b0, note_hex, octave_digit};
+    assign sevseg_32bit_hex_val = {28'b0, digit_display};
 //____________________________________________________________________________//
 
 //------------- Audio data path                                  -------------//
-  //----------- Tone generator                                   -----------//
+  //----------- Audio multiplexing & Tone generator              -----------//
+    assign audio_play        = play || keyboard_note_down;
+    assign audio_note_index  = keyboard_note_down ? keyboard_note_index  : note_index;
+    assign audio_note_octave = keyboard_note_down ? keyboard_note_octave : SW[2:0];
+
     tone_generator tone_generator_inst (
-      .clk         ( clk_audio   ),
-      .rst_n       ( aud_rst_n   ),
-      .note_index  ( note_index  ),
-      .octave_sel  ( SW [2:0]    ),
-      .sample      ( sample      ),
-      .valid       ( valid       ),
-      .ready       ( ready       )
+      .clk         ( clk_audio         ),
+      .rst_n       ( aud_rst_n         ),
+      .note_index  ( audio_note_index  ),
+      .octave_sel  ( audio_note_octave ),
+      .sample      ( sample            ),
+      .valid       ( valid             ),
+      .ready       ( ready             )
     );
     assign vol_mult      = sample * volume;
     assign sample_scaled = vol_mult [19:4];
@@ -220,7 +271,7 @@ module audio_nexys_a7 (
     // 256 samples = ~5.3 ms of sound (latency of note/volume/pause changes) 
     // but even student can't catch the 5.3 ms
 
-    assign ready = play && !fifo_full;
+    assign ready = audio_play && !fifo_full;
 
     assign fifo_wr_en   = ready;
     assign fifo_wr_data = {16'b0, sample_scaled};
