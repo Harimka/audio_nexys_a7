@@ -1,5 +1,7 @@
 # Arturia MicroLab mk3 → UART → wavetable FPGA voice
 
+> Superseded architecture (2026-10-24): the user requires the laptop only for programming. This laptop bridge does not satisfy that requirement. Keep it only as a bench diagnostic; do not give its wiring steps as the requested final setup. See [DIRECT_USB_MIDI.md](DIRECT_USB_MIDI.md).
+
 ## What this prototype does
 
 The Arturia MicroLab mk3 is a USB-MIDI keyboard, not an audio source. This prototype sends its MIDI Note On/Off messages through a Linux computer, then through the Nexys A7's `PROG UART` USB cable to the FPGA. The FPGA parses MIDI over UART, generates a monophonic sine tone from an RTL wavetable, and sends it to the board's mono audio output.
@@ -12,7 +14,7 @@ MicroLab mk3 --USB-MIDI--> Linux laptop --USB-UART, 115200 8-N-1--> FPGA
                                                         PWM -> headphones
 ```
 
-This is a bench prototype requiring the laptop during play. Whether a laptop may be part of the final hackathon setup is unknown. The board's `USB HOST` port is not used: this project does not implement USB-MIDI host support.
+This is a bench prototype requiring the laptop during play. The user explicitly excludes a laptop during play. The board's `USB HOST` port is not used: this project does not implement USB-MIDI host support.
 
 ## Wiring
 
