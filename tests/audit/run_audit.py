@@ -30,6 +30,10 @@ keyboard_cases = {
     'tb_sevseg_digit_mask': ['sevseg_ctrl'],
 }
 
+audio_cases = {
+    'tb_audio_sample_player': ['audio_sample_player', 'audio_sample_rom'],
+}
+
 with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
     # 1. Baseline audit modules
     for name, modules in cases.items():
@@ -55,7 +59,20 @@ with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
                                check=True)
                 subprocess.run(['vvp', target], check=True, timeout=60)
 
-    # 3. Top-level elaboration checks
+    # 3. Audio Sample Memory Player regression tests
+    audio_test_dir = here.parent / 'audio'
+    if audio_test_dir.exists():
+        for bench, modules in audio_cases.items():
+            bench_file = audio_test_dir / (bench + '.sv')
+            if bench_file.exists():
+                target = str(pathlib.Path(temp) / (bench + '.vvp'))
+                subprocess.run(['iverilog', '-g2012', '-s', bench, '-o', target,
+                                str(bench_file)] +
+                               [str(src / 'rtl' / (module + '.sv')) for module in modules],
+                               check=True)
+                subprocess.run(['vvp', target], check=True, timeout=60)
+
+    # 4. Top-level elaboration checks
     rtl = [str(p) for p in sorted((src / 'rtl').glob('*.sv'))]
     checks = {
         'simulation top': ['-s', 'top_audio', str(src / 'sim/top_audio.sv')] + rtl,

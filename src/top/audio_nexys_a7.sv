@@ -61,6 +61,12 @@ module audio_nexys_a7 (
     wire [ 2:0]   audio_note_index     ;
     wire [ 2:0]   audio_note_octave    ;
     wire          audio_play           ;
+    wire [15:0]   tone_sample          ;
+    wire [15:0]   mem_sample           ;
+    wire          mem_sample_valid     ;
+    wire          mem_sample_playing   ;
+    wire [11:0]   mem_sample_addr      ;
+    wire          mem_sample_end       ;
     wire [15:0]   sample               ;
     wire          valid                ;
     wire          ready                ;
@@ -249,8 +255,7 @@ module audio_nexys_a7 (
 //____________________________________________________________________________//
 
 //------------- Audio data path                                  -------------//
-  //----------- Audio multiplexing & Tone generator              -----------//
-    assign audio_play        = play || keyboard_note_down;
+  //----------- Tone generator                                   -----------//
     assign audio_note_index  = keyboard_note_down ? keyboard_note_index  : note_index;
     assign audio_note_octave = keyboard_note_down ? keyboard_note_octave : SW[2:0];
 
@@ -259,12 +264,42 @@ module audio_nexys_a7 (
       .rst_n       ( aud_rst_n         ),
       .note_index  ( audio_note_index  ),
       .octave_sel  ( audio_note_octave ),
-      .sample      ( sample            ),
+      .sample      ( tone_sample       ),
       .valid       ( valid             ),
       .ready       ( ready             )
     );
-    assign vol_mult      = sample * volume;
+
+  //----------- Audio Sample Memory Player (BRAM)                -----------//
+  // Triggered on BTNC down pulse or keyboard key in sample mode (SW[0] = 1)
+    wire sample_play_trigger = SW[0] && (button_c_d || keyboard_note_event);
+
+    audio_sample_player #(
+      .ADDR_WIDTH   ( 12 ),
+      .DATA_WIDTH   ( 16 ),
+      .SAMPLE_DEPTH ( 4096 ),
+      .INIT_FILE    ( "src/rtl/sample_data.mem" )
+    ) sample_player_inst (
+      .clk          ( clk_audio           ),
+      .rst_n        ( aud_rst_n           ),
+      .play_trigger ( sample_play_trigger ),
+      .stop_cmd     ( button_d_d && SW[0] ),
+      .loop_en      ( SW[1]               ),
+      .ready        ( ready               ),
+      .valid        ( mem_sample_valid    ),
+      .sample_out   ( mem_sample          ),
+      .playing      ( mem_sample_playing  ),
+      .sample_addr  ( mem_sample_addr     ),
+      .playback_end ( mem_sample_end      )
+    );
+
+  //----------- Audio Source Multiplexer                         -----------//
+  // SW[0] == 0: DDS Tone generator + Keyboard synthesizer
+  // SW[0] == 1: BRAM Audio sample memory playback
+    assign sample     = SW[0] ? mem_sample : tone_sample;
+    assign audio_play = SW[0] ? (mem_sample_playing && mem_sample_valid) : (play || keyboard_note_down);
+    assign vol_mult   = sample * volume;
     assign sample_scaled = vol_mult [19:4];
+
   //----------- FIFO                                             -----------//
     // Tempo is set by pwm: it reads one sample per 1024 clocks (48.006 kHz);
     // the generator steps once per written sample, so the full FIFO holds
