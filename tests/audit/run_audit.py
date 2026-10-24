@@ -16,12 +16,16 @@ for tool in ('iverilog','vvp'):
 cases={'fifo':['fifo'],'audio':['tone_generator'],'pwm':['pwm'],
        'buttons':['button_ctrl'],'reset':['reset_button_debouncer'],'vga':['display_ctrl']}
 with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
-    midi_target=str(pathlib.Path(temp)/'midi.vvp')
-    subprocess.run(['iverilog','-g2012','-s','tb_midi_uart_receiver','-o',midi_target,
-                    str(here.parent/'midi/tb_midi_uart_receiver.sv'),
-                    str(src/'rtl/uart_rx.sv'),str(src/'rtl/midi_uart_receiver.sv'),
-                    str(src/'rtl/midi_wavetable.sv')],check=True)
-    subprocess.run(['vvp',midi_target],check=True,timeout=60)
+    midi_rtl = ['uart_rx', 'midi_note_decoder', 'midi_note_state',
+                'midi_uart_receiver', 'usb_midi_note_decoder', 'usb_midi_voice',
+                'midi_wavetable']
+    for bench in ('tb_midi_uart_receiver', 'tb_midi_protocol', 'tb_usb_midi_voice'):
+        target = str(pathlib.Path(temp) / (bench + '.vvp'))
+        subprocess.run(['iverilog', '-g2012', '-s', bench, '-o', target,
+                        str(here.parent / 'midi' / (bench + '.sv'))] +
+                       [str(src / 'rtl' / (module + '.sv')) for module in midi_rtl],
+                       check=True)
+        subprocess.run(['vvp', target], check=True, timeout=60)
     for name,modules in cases.items():
         target=str(pathlib.Path(temp)/(name+'.vvp'))
         subprocess.run(['iverilog','-g2012','-s','audit_'+name,'-o',target,

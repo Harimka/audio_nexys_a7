@@ -19,3 +19,6 @@ Reset-тест ускорен `CNT_WIDTH=4`; логика потери lock не
 После исправлений добавить регрессионные проверки правильного поведения и обновить режимы запуска. Сохранить baseline-логи. Этот скрипт не является достаточным зелёным CI-критерием готовности плеера.
 
 `baseline_logs/audit_results.txt` содержит отдельные сценарии, `audit_build_results.txt` — элаборацию, `audit_reproduction.txt` — повторный прогон. Личные абсолютные пути заменены на `<workspace>`; функциональные результаты сохранены.
+
+
+MIDI regression: `tb_midi_protocol.sv` проверяет реальные значения MicroLab, running status, каналы, USB-payload и backpressure/ошибки; `tb_usb_midi_voice.sv` проверяет payload→wavetable, частоту A4 и velocity. Это тесты на границе уже полученных данных, не тест USB enumeration, PIC24 или физического J5. Контракт: `doc/MIDI_PROTOCOL.md`.

@@ -24,3 +24,8 @@
 ## Просмотренный UART-справочник
 
 Пользователь указал [YuraThomas/Methoda, UART_up](https://github.com/YuraThomas/Methoda/tree/main/Interfaces/My_UART/UART_up), revision `80b2d908b18afbe6623da05266936f8ac58cc8e7`, MIT. Модуль был просмотрен как учебный пример FSM UART; HDL исходники не копировались и не модифицировались из этого репозитория. Реализация этого проекта написана отдельно и покрыта собственным Icarus тестом. Python-пакеты `mido`, `python-rtmidi`, `pyserial` устанавливаются пользователем и в репозиторий не вендорятся.
+
+
+## MIDI protocol
+
+[USB-IF MIDI 1.0 specification](https://www.usb.org/sites/default/files/midi10.pdf), Release 1.0 (1999-11-01), раздел 4, использован как описание формата 32-bit USB-MIDI Event Packet. Спецификация не скопирована в проект. Новые `midi_note_decoder`, `midi_note_state`, `usb_midi_note_decoder`, `usb_midi_voice` и тесты написаны отдельно с помощью ИИ, без заимствования стороннего HDL и без добавления IP. Это не устанавливает общую лицензию для исходного ZIP.

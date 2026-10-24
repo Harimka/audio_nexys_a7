@@ -14,6 +14,8 @@
 
 `midi_wavetable.sv`: 256-точечная таблица синуса, 32-битная фаза, 128 MIDI-нот, velocity, один голос. `midi_uart_receiver.sv`: UART MIDI Note On/Off и running status. Они не реализуют USB enumeration, descriptors, endpoint polling или USB-MIDI host. Выбранный UART вход на плате сейчас обслуживает только прежний стендовый мост. Ни прямой MicroLab, ни аналоговый звук новой версии на реальной плате пока не проверены.
 
+Дополнительно реализованы и проверены Icarus общий byte decoder, USB-MIDI payload decoder, channel-aware note state и payload→wavetable wrapper; см. [MIDI_PROTOCOL.md](MIDI_PROTOCOL.md). Они обрабатывают уже полученные данные и не реализуют USB host. Пользователь подтвердил отсутствие дополнительного host и PIC-программатора.
+
 ## Реальные способы продолжить
 
 1. **Сохранить кабель MicroLab в J5:** разработать отдельную firmware PIC24 USB-MIDI host и прошить PIC24 через J9 подходящим ICSP-программатором. Потребуются USB-host стек под этот PIC, enumeration USB-MIDI устройства, разбор descriptors и bulk IN MIDI event packets, передача событий в FPGA через доступные PS/2 линии с согласованным протоколом. Нужно проверить точные пины, конфигурационные биты, питание/VBUS, состояние линий FPGA configuration и восстановление исходной firmware. Vivado bitstream PIC24 не перепрошивает. Такого программатора/исходной firmware в доступном комплекте не подтверждено. Эта работа не выполнена; прошивать PIC24 наугад нельзя.
