@@ -447,6 +447,7 @@ module vga_daw_ui (
 
                 // "TRK 1" at X=552..591
                 if (h_coord < 11'd600) begin
+                    char_col = (h_coord - 11'd552) & 3'b111;
                     case ((h_coord - 11'd552) >> 3)
                         0: char_code = "T"; 1: char_code = "R"; 2: char_code = "K"; 3: char_code = " ";
                         4: char_code = 8'h31 + track_row_id;
@@ -455,6 +456,7 @@ module vga_daw_ui (
                 end
                 // "REC" at X=610..633
                 else if (h_coord >= 11'd610 && h_coord < 11'd634) begin
+                    char_col = (h_coord - 11'd610) & 3'b111;
                     if (recording[track_row_id]) begin
                         char_color = (track_row_id == selected_track) ? COLOR_PANEL : COLOR_ALERT;
                         case ((h_coord - 11'd610) >> 3)
@@ -469,6 +471,7 @@ module vga_daw_ui (
                 end
                 // "PLAY" at X=650..681
                 else if (h_coord >= 11'd650 && h_coord < 11'd682) begin
+                    char_col = (h_coord - 11'd650) & 3'b111;
                     if (playing[track_row_id]) begin
                         char_color = (track_row_id == selected_track) ? COLOR_PANEL : COLOR_PLAY;
                         case ((h_coord - 11'd650) >> 3)
@@ -483,6 +486,7 @@ module vga_daw_ui (
                 end
                 // "E:XX/40" at X=700..755
                 else if (h_coord >= 11'd700 && h_coord < 11'd756) begin
+                    char_col = (h_coord - 11'd700) & 3'b111;
                     case ((h_coord - 11'd700) >> 3)
                         0: char_code = "E"; 1: char_code = ":";
                         2: char_code = hex_digit((curr_track_count >> 4) & 4'hF);
