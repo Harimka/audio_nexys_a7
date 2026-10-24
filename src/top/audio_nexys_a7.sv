@@ -51,17 +51,19 @@ module audio_nexys_a7 (
     wire [2:0]    keyboard_note_octave;
     wire          keyboard_note_event;
     wire          keyboard_note_down;
+    wire [7:0]    keyboard_note_key;
     (* ASYNC_REG = "TRUE" *) reg [1:0] keyboard_event_sync;
     (* ASYNC_REG = "TRUE" *) reg [1:0] keyboard_down_sync;
     (* ASYNC_REG = "TRUE" *) reg [2:0] keyboard_note_index_sync1;
     (* ASYNC_REG = "TRUE" *) reg [2:0] keyboard_note_index_sync2;
     (* ASYNC_REG = "TRUE" *) reg [2:0] keyboard_note_octave_sync1;
     (* ASYNC_REG = "TRUE" *) reg [2:0] keyboard_note_octave_sync2;
+    (* ASYNC_REG = "TRUE" *) reg [7:0] keyboard_note_key_sync1;
+    (* ASYNC_REG = "TRUE" *) reg [7:0] keyboard_note_key_sync2;
     reg           keyboard_event_sync_d;
-    reg           keyboard_note_gate;
     wire          keyboard_event_audio;
-    wire [2:0]    audio_note_index;
-    wire [2:0]    audio_note_octave;
+    wire [15:0]   keyboard_poly_sample;
+    wire [3:0]    keyboard_voice_count;
   //----------- Audio data path                                  -----------//
     wire  [15:0]  sample        ;
     wire  [15:0]  local_sample  ;
@@ -211,7 +213,8 @@ module audio_nexys_a7 (
       .note_index   ( keyboard_note_index ),
       .note_octave  ( keyboard_note_octave),
       .note_event   ( keyboard_note_event ),
-      .note_down    ( keyboard_note_down  )
+      .note_down    ( keyboard_note_down  ),
+      .note_key     ( keyboard_note_key   )
     );
 
     always_ff @(posedge clk_5mhz0d or negedge keyboard_rst_n) begin
@@ -231,8 +234,9 @@ module audio_nexys_a7 (
         keyboard_note_index_sync2 <= 3'b000;
         keyboard_note_octave_sync1 <= 3'd3;
         keyboard_note_octave_sync2 <= 3'd3;
+        keyboard_note_key_sync1    <= 8'h00;
+        keyboard_note_key_sync2    <= 8'h00;
         keyboard_event_sync_d     <= 1'b0;
-        keyboard_note_gate        <= 1'b0;
       end else begin
         keyboard_event_sync       <= {keyboard_event_sync[0], keyboard_note_event};
         keyboard_down_sync        <= {keyboard_down_sync[0], keyboard_note_down};
@@ -240,14 +244,12 @@ module audio_nexys_a7 (
         keyboard_note_index_sync2 <= keyboard_note_index_sync1;
         keyboard_note_octave_sync1 <= keyboard_note_octave;
         keyboard_note_octave_sync2 <= keyboard_note_octave_sync1;
+        keyboard_note_key_sync1    <= keyboard_note_key;
+        keyboard_note_key_sync2    <= keyboard_note_key_sync1;
         keyboard_event_sync_d     <= keyboard_event_sync[1];
-        if (keyboard_event_audio)
-          keyboard_note_gate <= keyboard_down_sync[1];
       end
     end
     assign keyboard_event_audio = keyboard_event_sync[1] && !keyboard_event_sync_d;
-    assign audio_note_index = keyboard_note_gate ? keyboard_note_index_sync2 : note_index;
-    assign audio_note_octave = keyboard_note_gate ? keyboard_note_octave_sync2 : 3'd3;
 //____________________________________________________________________________//
 
 //------------- Seven Segments Indicators                        -------------//
@@ -269,8 +271,8 @@ module audio_nexys_a7 (
     tone_generator tone_generator_inst (
       .clk         ( clk_audio   ),
       .rst_n       ( aud_rst_n   ),
-      .note_index  ( audio_note_index ),
-      .octave_sel  ( audio_note_octave),
+      .note_index  ( note_index  ),
+      .octave_sel  ( SW [2:0]    ),
       .sample      ( local_sample),
       .valid       ( valid       ),
       .ready       ( ready       )
@@ -286,8 +288,22 @@ module audio_nexys_a7 (
       .sample    ( midi_sample   )
     );
 
-    assign audio_play    = SW[15] ? midi_gate : (play || keyboard_note_gate);
-    assign sample        = SW[15] ? midi_sample : local_sample;
+    keyboard_poly_synth #(.VOICES(8)) keyboard_poly_synth_inst (
+      .clk          ( clk_audio                 ),
+      .rst_n        ( aud_rst_n                 ),
+      .note_event   ( keyboard_event_audio      ),
+      .note_down    ( keyboard_down_sync[1]     ),
+      .note_key     ( keyboard_note_key_sync2  ),
+      .note_index   ( keyboard_note_index_sync2),
+      .note_octave  ( keyboard_note_octave_sync2),
+      .ready        ( ready                     ),
+      .sample       ( keyboard_poly_sample      ),
+      .active_count ( keyboard_voice_count      )
+    );
+
+    assign audio_play    = SW[15] ? midi_gate : (play || (keyboard_voice_count != 0));
+    assign sample        = SW[15] ? midi_sample :
+                           ((keyboard_voice_count != 0) ? keyboard_poly_sample : local_sample);
     assign vol_mult      = sample * volume;
     assign sample_scaled = vol_mult [19:4];
   //----------- FIFO                                             -----------//

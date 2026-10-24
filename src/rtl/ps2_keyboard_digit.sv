@@ -1,5 +1,5 @@
 // Receive PS/2 Set-2 keyboard bytes, remember the last numeric key pressed,
-// and emit monophonic note events from four keyboard rows.
+// and emit per-key note events from four keyboard rows.
 // PS/2 pins are asynchronous to clk; each is synchronized and lightly filtered.
 // The PIC24 on Nexys A7 translates a supported USB HID keyboard to this PS/2
 // interface. This module is receive-only and never drives either pin.
@@ -16,7 +16,8 @@ module ps2_keyboard_digit #(
     output reg  [2:0] note_index,
     output reg  [2:0] note_octave,
     output reg        note_event,
-    output reg        note_down
+    output reg        note_down,
+    output reg  [7:0] note_key
 );
     (* ASYNC_REG = "TRUE" *) reg [1:0] clk_sync;
     (* ASYNC_REG = "TRUE" *) reg [1:0] data_sync;
@@ -36,8 +37,7 @@ module ps2_keyboard_digit #(
     reg [7:0] byte_data;
     reg break_prefix;
     reg extended_prefix;
-    reg [7:0] held_note_scan_code;
-    reg held_note_valid;
+    reg [127:0] note_keys_down;
 
     function automatic is_note_scan_code(input [7:0] scan_code);
         begin
@@ -121,14 +121,14 @@ module ps2_keyboard_digit #(
             byte_data     <= 0;
             break_prefix  <= 1'b0;
             extended_prefix <= 1'b0;
-            held_note_scan_code <= 8'h00;
-            held_note_valid <= 1'b0;
+            note_keys_down <= 128'b0;
             digit         <= 0;
             digit_valid   <= 1'b0;
             note_index    <= 0;
             note_octave   <= 3'd3;
             note_event    <= 1'b0;
             note_down     <= 1'b0;
+            note_key      <= 8'h00;
         end else begin
             byte_valid  <= 1'b0;
             digit_valid <= 1'b0;
@@ -175,19 +175,20 @@ module ps2_keyboard_digit #(
                     extended_prefix <= 1'b1;
                 end else begin
                     if (!extended_prefix && break_prefix) begin
-                        if (held_note_valid && byte_data == held_note_scan_code) begin
+                        if (is_note_scan_code(byte_data) && note_keys_down[byte_data]) begin
                             note_event <= 1'b1;
                             note_down  <= 1'b0;
-                            held_note_valid <= 1'b0;
+                            note_key   <= byte_data;
+                            note_keys_down[byte_data] <= 1'b0;
                         end
                     end else if (!extended_prefix) begin
-                        if (is_note_scan_code(byte_data)) begin
+                        if (is_note_scan_code(byte_data) && !note_keys_down[byte_data]) begin
                             note_index  <= note_index_for_scan(byte_data);
                             note_octave <= octave_for_scan(byte_data);
                             note_event  <= 1'b1;
                             note_down   <= 1'b1;
-                            held_note_scan_code <= byte_data;
-                            held_note_valid <= 1'b1;
+                            note_key    <= byte_data;
+                            note_keys_down[byte_data] <= 1'b1;
                         end
 
                         case (byte_data)

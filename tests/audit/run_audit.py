@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory(prefix='audio-nexys-audit-') as temp:
         subprocess.run(['vvp', target], check=True, timeout=60)
     keyboard_cases = {
         'tb_ps2_keyboard_digit': ['ps2_keyboard_digit'],
+        'tb_keyboard_poly_synth': ['keyboard_poly_synth'],
         'tb_sevseg_digit_mask': ['sevseg_ctrl'],
     }
     for bench, modules in keyboard_cases.items():

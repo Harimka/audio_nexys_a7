@@ -12,18 +12,20 @@ module tb_ps2_keyboard_digit;
     wire [2:0] note_octave;
     wire note_event;
     wire note_down;
+    wire [7:0] note_key;
     integer valid_count = 0;
     integer note_on_count = 0;
     integer note_off_count = 0;
     reg [3:0] last_digit = 0;
     reg [2:0] last_note = 0;
     reg [2:0] last_octave = 0;
+    reg [7:0] last_key = 0;
 
     ps2_keyboard_digit #(.FILTER_BITS(3), .TIMEOUT_CYCLES(2000)) dut (
         .clk(clk), .rst_n(rst_n), .ps2_clk(ps2_clk), .ps2_data(ps2_data),
         .digit(digit), .digit_valid(digit_valid),
         .note_index(note_index), .note_octave(note_octave),
-        .note_event(note_event), .note_down(note_down)
+        .note_event(note_event), .note_down(note_down), .note_key(note_key)
     );
 
     always @(posedge clk) begin
@@ -34,6 +36,7 @@ module tb_ps2_keyboard_digit;
         if (note_event) begin
             last_note <= note_index;
             last_octave <= note_octave;
+            last_key <= note_key;
             if (note_down) note_on_count <= note_on_count + 1;
             else note_off_count <= note_off_count + 1;
         end
@@ -129,6 +132,7 @@ module tb_ps2_keyboard_digit;
             if (valid_count != count_before || digit !== 0)
                 $fatal(1, "key release changed the displayed value");
         end
+        if (dut.note_keys_down[8'h16]) $fatal(1, "top-row 1 remained logically held after break");
 
         // Numeric keypad scan codes map to the same decimal digits.
         check_digit(8'h70, 0);
@@ -142,6 +146,14 @@ module tb_ps2_keyboard_digit;
         check_digit(8'h75, 8);
         check_digit(8'h7D, 9);
 
+        // Clear musical key-down state caused by number-row digit checks.
+        send_byte(8'hF0); send_byte(8'h1E);
+        send_byte(8'hF0); send_byte(8'h26);
+        send_byte(8'hF0); send_byte(8'h25);
+        send_byte(8'hF0); send_byte(8'h2E);
+        send_byte(8'hF0); send_byte(8'h36);
+        send_byte(8'hF0); send_byte(8'h3D);
+
         // The first seven keys of each physical row select C..B in octaves 1..4.
         check_note(8'h16, 3'd0, 3'd0); // 1 = C1
         check_note(8'h1E, 3'd1, 3'd0); // 2 = D1
@@ -151,6 +163,12 @@ module tb_ps2_keyboard_digit;
         check_note(8'h36, 3'd5, 3'd0); // 6 = A1
         check_note(8'h3D, 3'd6, 3'd0); // 7 = B1
         release_note(8'h3D);
+        release_note(8'h16);
+        release_note(8'h1E);
+        release_note(8'h26);
+        release_note(8'h25);
+        release_note(8'h2E);
+        release_note(8'h36);
 
         check_note(8'h15, 3'd0, 3'd1); // Q = C2
         check_note(8'h1D, 3'd1, 3'd1); // W = D2
@@ -175,7 +193,7 @@ module tb_ps2_keyboard_digit;
         check_note(8'h3A, 3'd6, 3'd3); // M = B4
         release_note(8'h3A);
 
-        // A stale release from a prior key must not stop the newer monophonic note.
+        // Several keys can be held; releasing one must identify that exact key.
         check_note(8'h16, 3'd0, 3'd0);
         check_note(8'h1E, 3'd1, 3'd0);
         begin : stale_release
@@ -183,10 +201,21 @@ module tb_ps2_keyboard_digit;
             off_before = note_off_count;
             send_byte(8'hF0);
             send_byte(8'h16);
-            if (note_off_count != off_before || !note_down || note_index != 3'd1)
-                $fatal(1, "release of an older key stopped the latest note");
+            if (note_off_count != off_before + 1 || last_key != 8'h16 || note_down)
+                $fatal(1, "release event did not identify the matching older key");
         end
         release_note(8'h1E);
+
+        // Key-repeat make codes must not allocate duplicate logical presses.
+        begin : repeat_filter
+            integer on_before;
+            on_before = note_on_count;
+            send_byte(8'h16);
+            send_byte(8'h16);
+            if (note_on_count != on_before + 1)
+                $fatal(1, "repeated make generated duplicate Note On events");
+        end
+        release_note(8'h16);
 
         // Keypad remains digit-only; 0/8/9 and keypad 1..7 do not select notes.
         begin : ignored_digits
@@ -212,7 +241,7 @@ module tb_ps2_keyboard_digit;
                 $fatal(1, "extended scan code unexpectedly changed digit");
         end
 
-        $display("PASS PS/2 digits, four keyboard-row octaves, matching releases, and extended filtering");
+        $display("PASS PS/2 digits, four keyboard-row octaves, independent key releases, and repeat filtering");
         $finish;
     end
 endmodule
