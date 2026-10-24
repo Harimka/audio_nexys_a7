@@ -12,9 +12,20 @@ module tb_ps2_keyboard_digit;
     wire [2:0] note_octave;
     wire note_event;
     wire note_down;
+    wire poly_event;
+    wire poly_down;
+    wire [7:0] poly_key;
+    wire record_toggle;
+    wire play_trigger;
+    wire play_stop;
     integer valid_count = 0;
     integer note_on_count = 0;
     integer note_off_count = 0;
+    integer poly_on_count = 0;
+    integer poly_off_count = 0;
+    integer record_toggle_count = 0;
+    integer play_trigger_count = 0;
+    integer play_stop_count = 0;
     reg [3:0] last_digit = 0;
     reg [2:0] last_note = 0;
     reg [2:0] last_octave = 0;
@@ -23,7 +34,9 @@ module tb_ps2_keyboard_digit;
         .clk(clk), .rst_n(rst_n), .ps2_clk(ps2_clk), .ps2_data(ps2_data),
         .digit(digit), .digit_valid(digit_valid),
         .note_index(note_index), .note_octave(note_octave),
-        .note_event(note_event), .note_down(note_down)
+        .note_event(note_event), .note_down(note_down),
+        .poly_event(poly_event), .poly_down(poly_down), .poly_key(poly_key),
+        .record_toggle(record_toggle), .play_trigger(play_trigger), .play_stop(play_stop)
     );
 
     always @(posedge clk) begin
@@ -37,6 +50,13 @@ module tb_ps2_keyboard_digit;
             if (note_down) note_on_count <= note_on_count + 1;
             else note_off_count <= note_off_count + 1;
         end
+        if (poly_event) begin
+            if (poly_down) poly_on_count <= poly_on_count + 1;
+            else poly_off_count <= poly_off_count + 1;
+        end
+        if (record_toggle) record_toggle_count <= record_toggle_count + 1;
+        if (play_trigger) play_trigger_count <= play_trigger_count + 1;
+        if (play_stop) play_stop_count <= play_stop_count + 1;
     end
 
     task tick(input integer count);
@@ -52,6 +72,7 @@ module tb_ps2_keyboard_digit;
             ps2_clk = 1;
             tick(8);
         end
+
     endtask
 
     task send_byte(input [7:0] value);
@@ -188,6 +209,25 @@ module tb_ps2_keyboard_digit;
         end
         release_note(8'h1E);
 
+        // Poly events report every physical press/release, not just the
+        // monophonic stack's current top note.
+        begin : check_poly_events
+            integer on_before;
+            integer off_before;
+            on_before = poly_on_count;
+            off_before = poly_off_count;
+            send_byte(8'h16);
+            send_byte(8'h1E);
+            if (poly_on_count != on_before + 2 || poly_key != 8'h1E || !poly_down)
+                $fatal(1, "poly stream did not report both unique presses and key identity");
+            send_byte(8'hF0); send_byte(8'h16);
+            if (poly_off_count != off_before + 1 || poly_key != 8'h16 || poly_down)
+                $fatal(1, "poly stream missed release of older held key");
+            send_byte(8'hF0); send_byte(8'h1E);
+            if (poly_off_count != off_before + 2 || poly_key != 8'h1E)
+                $fatal(1, "poly stream missed final held-key release");
+        end
+
         // Keypad remains digit-only; 0/8/9 and keypad 1..7 do not select notes.
         begin : ignored_digits
             integer on_before;
@@ -212,7 +252,27 @@ module tb_ps2_keyboard_digit;
                 $fatal(1, "extended scan code unexpectedly changed digit");
         end
 
-        $display("PASS PS/2 digits, four keyboard-row octaves, matching releases, and extended filtering");
+        // F9 toggles record, Enter plays, Escape stops. Typematic repeats are
+        // suppressed until the corresponding break code arrives.
+        begin : check_transport_controls
+            integer n;
+            n = record_toggle_count;
+            send_byte(8'h01); send_byte(8'h01);
+            if (record_toggle_count != n + 1)
+                $fatal(1, "F9 typematic repeat retriggered record toggle");
+            send_byte(8'hF0); send_byte(8'h01);
+            n = play_trigger_count;
+            send_byte(8'h5A);
+            if (play_trigger_count != n + 1)
+                $fatal(1, "Enter did not trigger playback");
+            send_byte(8'hF0); send_byte(8'h5A);
+            n = play_stop_count;
+            send_byte(8'h76);
+            if (play_stop_count != n + 1)
+                $fatal(1, "Escape did not trigger stop");
+        end
+
+        $display("PASS PS/2 digits, notes, poly events, transport keys and extended filtering");
         $finish;
     end
 endmodule

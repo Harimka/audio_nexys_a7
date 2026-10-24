@@ -27,6 +27,8 @@ cases = {
 keyboard_cases = {
     'tb_ps2_keyboard_digit': ['ps2_keyboard_digit'],
     'tb_ps2_keyboard_stack': ['ps2_keyboard_digit'],
+    'tb_keyboard_poly_synth': ['keyboard_poly_synth'],
+    'tb_melody_recorder': ['melody_recorder'],
     'tb_sevseg_digit_mask': ['sevseg_ctrl'],
 }
 

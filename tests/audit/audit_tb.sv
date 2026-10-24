@@ -61,9 +61,10 @@ module audit_pwm;
   reg [31:0] fifo_rd_data=0;
   wire aud_pwm,fifo_rd_en;
   wire aud_en;
+  wire sample_tick;
   pwm dut(.*);
   always #5 clk=~clk;
-  integer i,n,highs,reads;
+  integer i,n,highs,reads,ticks;
   initial begin
     repeat(2) @(negedge clk); rst_n=1;
     for(n=0;n<3;n=n+1) begin
@@ -79,7 +80,12 @@ module audit_pwm;
       if(highs!=((fifo_rd_data>>6)+1)) $fatal(1,"PWM duty");
       $display("PWM sample=%0d high_ticks=%0d/1024",fifo_rd_data,highs);
     end
-    fifo_empty=1;repeat(1024)@(negedge clk);
+    fifo_empty=1;ticks=0;
+    for(i=0;i<1024;i=i+1) begin
+      if(sample_tick)ticks=ticks+1;
+      @(negedge clk);
+    end
+    if(ticks!=1)$fatal(1,"PWM sample_tick must continue with empty FIFO");
     if(aud_en!==0) $fatal(1,"PWM empty mute");
     $display("PASS PWM: period, quantization, enable on empty; zero input gives one high tick");
     $finish;

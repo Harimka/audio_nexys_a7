@@ -7,6 +7,7 @@ module pwm #(
     input  wire                        rst_n        ,
     output wire                        aud_pwm      ,
     output reg                         aud_en       ,
+    output wire                        sample_tick  ,
 
     input  wire [FIFO_DATA_WIDTH-1:0]  fifo_rd_data ,
     output wire                        fifo_rd_en   ,
@@ -17,6 +18,7 @@ module pwm #(
     reg [PWM_WIDTH-1:0] duty;
 
     assign fifo_rd_en = !fifo_empty && ( &count );
+    assign sample_tick = &count;
 
     always_ff @( posedge clk or negedge rst_n ) begin
       if ( !rst_n ) begin

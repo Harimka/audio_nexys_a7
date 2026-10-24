@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FPGA DAW - Wireframe Concept (800x600)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --bg-canvas: #f8f9fa;
+      --border-dark: #1e293b;
+      --border-light: #cbd5e1;
+      --accent: #2563eb;
+      --active-note: #3b82f6;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background-color: #0f172a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--border-dark);
+    }
+
+    /* Строгий контейнер VGA 800x600 */
+    #vgaViewport {
+      width: 800px;
+      height: 600px;
+      background-color: var(--bg-canvas);
+      border: 2px solid var(--border-dark);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+    }
+
+    /* Линии и ячейки сетки */
+    .grid-cell {
+      border-right: 1px dotted var(--border-light);
+      border-bottom: 1px solid #e2e8f0;
+      position: relative;
+    }
+
+    .grid-cell.beat-bar {
+      border-right: 1.5px solid #94a3b8;
+    }
+
+    .grid-row-sharp {
+      background-color: rgba(0, 0, 0, 0.025);
+    }
+
+    .grid-row-root {
+      border-bottom: 2px solid #64748b !important;
+      background-color: rgba(37, 99, 235, 0.04);
+    }
+
+    /* Блоки нот на схеме */
+    .concept-note {
+      position: absolute;
+      top: 2px;
+      bottom: 2px;
+      background-color: #dbeafe;
+      border: 1px solid var(--accent);
+      border-left: 3px solid var(--accent);
+      border-radius: 2px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px;
+      font-size: 9px;
+      font-weight: 700;
+      color: #1e3a8a;
+    }
+
+    .concept-note .resize-handle {
+      width: 4px;
+      height: 100%;
+      background: #93c5fd;
+      border-radius: 1px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Основной контейнер 800x600 -->
+  <div id="vgaViewport">
+
+    <!-- 1. HEADER (42px) -->
+    <header class="h-[42px] border-b-2 border-slate-900 bg-white flex items-center justify-between px-3 shrink-0">
+      <!-- Идентификатор системы -->
+      <div class="flex items-center gap-2">
+        <div class="w-2.5 h-2.5 bg-blue-600 rounded-sm"></div>
+        <span class="text-xs font-black tracking-wider uppercase">FPGA DAW SYSTEM // CORE</span>
+        <span class="text-[9px] font-bold px-1.5 py-0.5 border border-slate-400 bg-slate-100 text-slate-700 rounded">
+          MODE: VGA 800x600 @ 60Hz
+        </span>
+      </div>
+
+      <!-- Параметры и транспорт -->
+      <div class="flex items-center gap-3 text-xs font-semibold">
+        <div class="flex items-center gap-1 border border-slate-300 px-1.5 py-0.5 bg-slate-50 rounded">
+          <span class="text-[10px] text-slate-500">BPM:</span>
+          <span class="font-bold text-blue-700">120</span>
+        </div>
+
+        <div class="flex items-center gap-1 border border-slate-300 px-1.5 py-0.5 bg-slate-50 rounded">
+          <span class="text-[10px] text-slate-500">TRACK:</span>
+          <span class="font-bold text-slate-900">T1 LEAD</span>
+        </div>
+
+        <div class="flex items-center gap-1 border border-slate-300 px-1.5 py-0.5 bg-slate-50 rounded">
+          <span class="text-[10px] text-slate-500">STEP:</span>
+          <span class="font-mono font-bold text-blue-700">01/16</span>
+        </div>
+
+        <!-- Кнопки управления -->
+        <div class="flex items-center gap-1 pl-2 border-l border-slate-300">
+          <button class="flex items-center gap-1 px-2 py-1 border border-red-600 text-red-600 text-[11px] font-bold bg-red-50 hover:bg-red-100 rounded transition-colors">
+            <span class="w-2 h-2 rounded-full bg-red-600"></span>
+            REC
+          </button>
+
+          <button class="flex items-center gap-1 px-2.5 py-1 border border-slate-900 bg-slate-900 text-white text-[11px] font-bold hover:bg-slate-800 rounded transition-colors">
+            PLAY / STOP
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. MAIN LAYOUT (526px) -->
+    <div class="flex-1 flex overflow-hidden">
+
+      <!-- ЛЕВАЯ ЧАСТЬ: PIANO ROLL (536px) -->
+      <section class="w-[536px] border-r-2 border-slate-900 flex flex-col bg-white shrink-0">
+
+        <!-- Верхняя линейка (Ruler, 26px) -->
+        <div class="h-[26px] border-b-2 border-slate-900 flex bg-slate-100 shrink-0">
+          <div class="w-[56px] border-r border-slate-400 flex items-center justify-center text-[9px] font-bold text-slate-600 shrink-0">
+            NOTE
+          </div>
+          <!-- Шаги 01..16 -->
+          <div class="flex-1 grid grid-cols-16 text-[9px] font-bold text-slate-500" style="display: grid; grid-template-columns: repeat(16, minmax(0, 1fr));">
+            <div class="flex items-center justify-center border-r border-slate-400 bg-slate-200 text-slate-900 font-extrabold">01</div>
+            <div class="flex items-center justify-center border-r border-slate-300">02</div>
+            <div class="flex items-center justify-center border-r border-slate-300">03</div>
+            <div class="flex items-center justify-center border-r border-slate-300">04</div>
+            <div class="flex items-center justify-center border-r border-slate-400 bg-slate-200 text-slate-900 font-extrabold">05</div>
+            <div class="flex items-center justify-center border-r border-slate-300">06</div>
+            <div class="flex items-center justify-center border-r border-slate-300">07</div>
+            <div class="flex items-center justify-center border-r border-slate-300">08</div>
+            <div class="flex items-center justify-center border-r border-slate-400 bg-slate-200 text-slate-900 font-extrabold">09</div>
+            <div class="flex items-center justify-center border-r border-slate-300">10</div>
+            <div class="flex items-center justify-center border-r border-slate-300">11</div>
+            <div class="flex items-center justify-center border-r border-slate-300">12</div>
+            <div class="flex items-center justify-center border-r border-slate-400 bg-slate-200 text-slate-900 font-extrabold">13</div>
+            <div class="flex items-center justify-center border-r border-slate-300">14</div>
+            <div class="flex items-center justify-center border-r border-slate-300">15</div>
+            <div class="flex items-center justify-center">16</div>
+          </div>
+        </div>
+
+        <!-- Рабочее поле: Клавиатура (56px) + Сетка событий -->
+        <div class="flex-1 flex overflow-hidden relative">
+
+          <!-- Клавиши (16 нот) -->
+          <div class="w-[56px] border-r-2 border-slate-900 flex flex-col shrink-0 bg-white z-10 text-[10px] font-bold" id="pitchCol">
+            <!-- Заполняется 16 нотами (B4..G3) -->
+          </div>
+
+          <!-- Сетка и контейнер нот -->
+          <div class="flex-1 relative overflow-hidden bg-slate-50" id="matrixContainer">
+
+            <!-- Матрица ячеек 16x16 -->
+            <div id="gridCells" class="absolute inset-0 grid" style="grid-template-columns: repeat(16, minmax(0, 1fr)); grid-template-rows: repeat(16, 1fr);">
+              <!-- Ячейки генерируются циклом -->
+            </div>
+
+            <!-- Слой нотных блоков (Концептуальные плейсхолдеры) -->
+            <div class="absolute inset-0 pointer-events-none z-10" id="notesPlaceholderLayer">
+              <!-- Нота 1: E4 шаг 0..1 -->
+              <div class="concept-note" style="top: calc((100% / 16) * 7 + 2px); height: calc(100% / 16 - 4px); left: 0%; width: calc(6.25% * 2 - 2px);">
+                <span>E4</span><div class="resize-handle"></div>
+              </div>
+              <!-- Нота 2: G4 шаг 2..3 -->
+              <div class="concept-note" style="top: calc((100% / 16) * 4 + 2px); height: calc(100% / 16 - 4px); left: 12.5%; width: calc(6.25% * 2 - 2px);">
+                <span>G4</span><div class="resize-handle"></div>
+              </div>
+              <!-- Нота 3: C4 шаг 4..6 -->
+              <div class="concept-note" style="top: calc((100% / 16) * 11 + 2px); height: calc(100% / 16 - 4px); left: 25%; width: calc(6.25% * 3 - 2px); background-color: #bfdbfe; border-color: #1d4ed8;">
+                <span>C4 [ROOT]</span><div class="resize-handle"></div>
+              </div>
+              <!-- Нота 4: A4 шаг 8..10 -->
+              <div class="concept-note" style="top: calc((100% / 16) * 2 + 2px); height: calc(100% / 16 - 4px); left: 50%; width: calc(6.25% * 3 - 2px);">
+                <span>A4</span><div class="resize-handle"></div>
+              </div>
+              <!-- Нота 5: F4 шаг 12..14 -->
+              <div class="concept-note" style="top: calc((100% / 16) * 6 + 2px); height: calc(100% / 16 - 4px); left: 75%; width: calc(6.25% * 2 - 2px);">
+                <span>F4</span><div class="resize-handle"></div>
+              </div>
+            </div>
+
+            <!-- Playhead Cursor (Положение текущего шага) -->
+            <div class="absolute top-0 bottom-0 w-[2px] bg-red-500 pointer-events-none z-20" style="left: 12.5%;">
+              <div class="w-2 h-2 bg-red-500 rotate-45 -ml-[3px] -mt-1"></div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ПРАВАЯ ЧАСТЬ: МОНИТОРИНГ И СИНТЕЗАТОР (264px) -->
+      <aside class="w-[264px] flex flex-col justify-between p-2.5 bg-slate-100 shrink-0 gap-2">
+
+        <!-- БЛОК 1: DDS OSCILLOSCOPE & WAVE SELECTOR -->
+        <div class="border border-slate-900 p-2 bg-white flex flex-col gap-1.5 rounded-sm">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-1">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-800">1. WAVEFORM SELECT</span>
+            <span class="text-[9px] font-bold px-1 bg-slate-900 text-white rounded">DDS CORE</span>
+          </div>
+
+          <!-- Кнопки выбора формы волны -->
+          <div class="grid grid-cols-4 gap-1 text-[9px] font-bold text-center">
+            <div class="py-1 border border-slate-900 bg-slate-900 text-white rounded-xs">SAW</div>
+            <div class="py-1 border border-slate-300 bg-slate-50 text-slate-700 rounded-xs">SQR</div>
+            <div class="py-1 border border-slate-300 bg-slate-50 text-slate-700 rounded-xs">TRI</div>
+            <div class="py-1 border border-slate-300 bg-slate-50 text-slate-700 rounded-xs">SIN</div>
+          </div>
+
+          <!-- График LUT осциллографа -->
+          <div class="border border-slate-400 h-[105px] bg-slate-50 relative flex items-center justify-center p-1 rounded-xs">
+            <div class="absolute inset-0 flex items-center pointer-events-none">
+              <div class="w-full border-b border-dashed border-slate-300"></div>
+            </div>
+            <div class="absolute inset-0 flex justify-center pointer-events-none">
+              <div class="h-full border-r border-dashed border-slate-300"></div>
+            </div>
+
+            <svg class="w-full h-full z-10" viewBox="0 0 200 80" preserveAspectRatio="none">
+              <!-- Sawtooth LUT Waveform Concept -->
+              <polyline points="0,70 100,10 100,70 200,10" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="absolute bottom-1 right-1.5 text-[8px] font-mono text-slate-400">LUT PREVIEW [256x8]</span>
+          </div>
+        </div>
+
+        <!-- БЛОК 2: ACTIVE REALTIME MONITOR & VU-METER -->
+        <div class="border border-slate-900 p-2 bg-white flex flex-col gap-2 rounded-sm">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-1">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-800">2. ACTIVE NOTE MONITOR</span>
+            <span class="text-[8px] text-slate-500 font-mono">LIVE OUT</span>
+          </div>
+
+          <div class="flex items-baseline justify-between px-2 py-1 bg-slate-50 border border-slate-200 rounded">
+            <div>
+              <span class="text-[8px] block text-slate-500 font-bold uppercase">Pitch</span>
+              <span class="text-3xl font-black text-blue-600 leading-none">G4</span>
+            </div>
+            <div class="text-right">
+              <span class="text-[8px] block text-slate-500 font-bold uppercase">Octave</span>
+              <span class="text-base font-bold text-slate-800 leading-none">OCT 4</span>
+            </div>
+            <div class="text-right">
+              <span class="text-[8px] block text-slate-500 font-bold uppercase">Frequency</span>
+              <span class="text-xs font-mono font-bold text-slate-700 leading-none">392.0 Hz</span>
+            </div>
+          </div>
+
+          <!-- Сегментный индикатор громкости (VU / PWM) -->
+          <div>
+            <div class="flex justify-between text-[9px] font-bold text-slate-600 mb-1">
+              <span>OUTPUT PWM / VOLUME</span>
+              <span class="font-mono text-blue-700">75%</span>
+            </div>
+            <div class="grid grid-cols-12 gap-0.5 h-3 border border-slate-400 p-0.5 bg-slate-100 rounded-xs">
+              <div class="bg-blue-600"></div>
+              <div class="bg-blue-600"></div>
+              <div class="bg-blue-600"></div>
+              <div class="bg-blue-600"></div>
+              <div class="bg-blue-600"></div>
+              <div class="bg-blue-600"></div>
+              <div class="bg-blue-600"></div>
+              <div class="bg-blue-600"></div>
+              <div class="bg-blue-600"></div>
+              <div class="bg-slate-300"></div>
+              <div class="bg-slate-300"></div>
+              <div class="bg-slate-300"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- БЛОК 3: TRACK SELECTOR & HARDWARE BUS -->
+        <div class="border border-slate-900 p-2 bg-white flex flex-col gap-1.5 rounded-sm">
+          <div class="text-[9px] font-bold flex justify-between border-b border-slate-200 pb-1">
+            <span class="uppercase tracking-wider text-slate-800">3. TRACK ROUTING</span>
+            <span class="text-emerald-700 font-mono">UART RX: ONLINE</span>
+          </div>
+
+          <div class="grid grid-cols-4 gap-1 text-[9px] font-bold text-center">
+            <div class="py-1 border border-slate-900 bg-slate-900 text-white rounded-xs">T1 LEAD</div>
+            <div class="py-1 border border-slate-300 bg-slate-50 text-slate-400 rounded-xs">T2 BASS</div>
+            <div class="py-1 border border-slate-300 bg-slate-50 text-slate-400 rounded-xs">T3 CHRD</div>
+            <div class="py-1 border border-slate-300 bg-slate-50 text-slate-400 rounded-xs">T4 DRUM</div>
+          </div>
+
+          <div class="text-[8px] text-slate-500 font-mono flex justify-between pt-0.5">
+            <span>BUS: MIDI CH 01</span>
+            <span>FIFO: 0 / 64 BYTES</span>
+          </div>
+        </div>
+
+      </aside>
+    </div>
+
+    <!-- 3. FOOTER (32px) -->
+    <footer class="h-[32px] border-t-2 border-slate-900 px-3 flex items-center justify-between text-[10px] font-bold bg-white shrink-0">
+      <!-- Левая часть: Подсказки -->
+      <div class="flex items-center gap-3 text-slate-600">
+        <span class="text-slate-900 uppercase tracking-wider text-[9px]">CONTROLS:</span>
+        <span><kbd class="px-1 border border-slate-300 bg-slate-100 rounded text-slate-800">L-CLICK</kbd> Add / Remove</span>
+        <span><kbd class="px-1 border border-slate-300 bg-slate-100 rounded text-slate-800">SPACE</kbd> Play/Stop</span>
+        <span><kbd class="px-1 border border-slate-300 bg-slate-100 rounded text-slate-800">1..4</kbd> Wave Select</span>
+      </div>
+
+      <!-- Правая часть: Статус памяти и платформа -->
+      <div class="flex items-center gap-3 font-mono text-[9px]">
+        <div class="flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+          <span>MEM NOTES: <strong class="text-slate-900">05 / 64</strong></span>
+        </div>
+        <span class="text-slate-300">|</span>
+        <span class="text-slate-700 font-bold">FPGA: XILINX ARTIX-7 XC7A100T</span>
+      </div>
+    </footer>
+
+  </div>
+
+  <script>
+    // Массив 16 полутонов от B4 до G3
+    const NOTES = [
+      { name: "B4", sharp: false },
+      { name: "A#4", sharp: true },
+      { name: "A4", sharp: false },
+      { name: "G#4", sharp: true },
+      { name: "G4", sharp: false },
+      { name: "F#4", sharp: true },
+      { name: "F4", sharp: false },
+      { name: "E4", sharp: false },
+      { name: "D#4", sharp: true },
+      { name: "D4", sharp: false },
+      { name: "C#4", sharp: true },
+      { name: "C4", sharp: false, isC: true },
+      { name: "B3", sharp: false },
+      { name: "A#3", sharp: true },
+      { name: "A3", sharp: false },
+      { name: "G3", sharp: false }
+    ];
+
+    // Отрисовка списка клавиш слева
+    const pitchCol = document.getElementById('pitchCol');
+    NOTES.forEach(note => {
+      const row = document.createElement('div');
+      row.className = `flex-1 flex items-center justify-between px-1.5 border-b ${
+        note.isC ? 'border-slate-800 bg-blue-50/70 font-black text-blue-900' : 'border-slate-200'
+      } ${note.sharp ? 'bg-slate-100 text-slate-700' : 'bg-white text-slate-900'}`;
+
+      row.innerHTML = `
+        <span>${note.name}</span>
+        ${note.isC ? '<span class="text-[7px] bg-blue-600 text-white px-0.5 rounded-xs">ROOT</span>' : ''}
+      `;
+      pitchCol.appendChild(row);
+    });
+
+    // Отрисовка ячеек координатной сетки 16x16
+    const gridContainer = document.getElementById('gridCells');
+    for (let r = 0; r < 16; r++) {
+      const note = NOTES[r];
+      for (let c = 0; c < 16; c++) {
+        const cell = document.createElement('div');
+        const isBeat = (c % 4 === 3);
+
+        let cellClass = 'grid-cell ';
+        if (note.isC) cellClass += 'grid-row-root ';
+        else if (note.sharp) cellClass += 'grid-row-sharp ';
+        if (isBeat) cellClass += 'beat-bar ';
+
+        cell.className = cellClass;
+        gridContainer.appendChild(cell);
+      }
+    }
+  </script>
+</body>
+</html>

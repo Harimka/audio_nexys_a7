@@ -27,7 +27,20 @@ module ps2_keyboard_digit #(
     output reg  [2:0] note_index,
     output reg  [2:0] note_octave,
     output reg        note_event,
-    output reg        note_down
+    output reg        note_down,
+    // Per-physical-key events for polyphonic voices. These outputs share clk.
+    output reg        poly_event,
+    output reg        poly_down,
+    output reg  [7:0] poly_key,
+    output reg  [2:0] poly_note_index,
+    output reg  [2:0] poly_note_octave,
+    output reg        record_toggle,
+    output reg        play_trigger,
+    output reg        play_stop,
+    output reg        track_next,
+    output reg        track_prev,
+    output reg        wave_next,
+    output reg        wave_prev
 );
     (* ASYNC_REG = "TRUE" *) reg [1:0] clk_sync;
     (* ASYNC_REG = "TRUE" *) reg [1:0] data_sync;
@@ -56,6 +69,8 @@ module ps2_keyboard_digit #(
     localparam integer MAX_HELD = 8;
     reg [7:0] held_stack [0:MAX_HELD-1];
     reg [3:0] held_count;
+    reg [255:0] note_keys_down;
+    reg [255:0] transport_keys_down;
 
     function automatic is_note_scan_code(input [7:0] scan_code);
         begin
@@ -155,10 +170,32 @@ module ps2_keyboard_digit #(
             note_octave         <= 3'd3;
             note_event          <= 1'b0;
             note_down           <= 1'b0;
+            poly_event          <= 1'b0;
+            poly_down           <= 1'b0;
+            poly_key            <= 8'h00;
+            poly_note_index     <= 3'd0;
+            poly_note_octave    <= 3'd3;
+            note_keys_down      <= 256'b0;
+            transport_keys_down <= 256'b0;
+            record_toggle      <= 1'b0;
+            play_trigger       <= 1'b0;
+            play_stop          <= 1'b0;
+            track_next         <= 1'b0;
+            track_prev         <= 1'b0;
+            wave_next          <= 1'b0;
+            wave_prev          <= 1'b0;
         end else begin
             byte_valid  <= 1'b0;
             digit_valid <= 1'b0;
             note_event  <= 1'b0;
+            poly_event <= 1'b0;
+            record_toggle <= 1'b0;
+            play_trigger  <= 1'b0;
+            play_stop     <= 1'b0;
+            track_next    <= 1'b0;
+            track_prev    <= 1'b0;
+            wave_next     <= 1'b0;
+            wave_prev     <= 1'b0;
 
             if (falling_edge) begin
                 age <= 0;
@@ -202,9 +239,39 @@ module ps2_keyboard_digit #(
                 end else if (byte_data == 8'hE0) begin
                     extended_prefix <= 1'b1;
                 end else begin
-                    if (!extended_prefix && break_prefix) begin
+                    if (extended_prefix && break_prefix) begin
+                        // Arrow keys are extended PS/2 Set-2 codes.
+                        if (transport_keys_down[byte_data])
+                            transport_keys_down[byte_data] <= 1'b0;
+                    end else if (extended_prefix) begin
+                        // Up/Right selects the next shape; Down/Left goes back.
+                        // Suppress typematic repeats while an arrow is held.
+                        case (byte_data)
+                            8'h75, 8'h74: begin // Up, Right
+                                if (!transport_keys_down[byte_data]) wave_next <= 1'b1;
+                                transport_keys_down[byte_data] <= 1'b1;
+                            end
+                            8'h72, 8'h6B: begin // Down, Left
+                                if (!transport_keys_down[byte_data]) wave_prev <= 1'b1;
+                                transport_keys_down[byte_data] <= 1'b1;
+                            end
+                            default: ;
+                        endcase
+                    end else if (break_prefix) begin
                         // Key release (Break code)
+                        if (transport_keys_down[byte_data])
+                            transport_keys_down[byte_data] <= 1'b0;
                         if (is_note_scan_code(byte_data)) begin
+                            // Publish every real physical-key release independently
+                            // of the monophonic legato stack below.
+                            if (note_keys_down[byte_data]) begin
+                                note_keys_down[byte_data] <= 1'b0;
+                                poly_event <= 1'b1;
+                                poly_down  <= 1'b0;
+                                poly_key   <= byte_data;
+                                poly_note_index <= note_index_for_scan(byte_data);
+                                poly_note_octave <= octave_for_scan(byte_data);
+                            end
                             if (LEGATO_STACK == 0) begin
                                 if (held_note_valid && byte_data == held_note_scan_code) begin
                                     note_event      <= 1'b1;
@@ -246,7 +313,51 @@ module ps2_keyboard_digit #(
                         end
                     end else if (!extended_prefix) begin
                         // Key press (Make code)
+                        // Transport controls are intentionally outside the four
+                        // Space/F9 toggle capture; Tab/F10 and Backspace select
+                        // tracks; Enter starts playback; Escape stops playback.
+                        // Suppress typematic repeats.
+                        case (byte_data)
+                            8'h01, 8'h43, 8'h29, 8'h39: begin // F9/Space, Set 2 or Set 1
+                                if (!transport_keys_down[byte_data])
+                                    record_toggle <= 1'b1;
+                                transport_keys_down[byte_data] <= 1'b1;
+                            end
+                            8'h5A: begin // Enter
+                                if (!transport_keys_down[byte_data])
+                                    play_trigger <= 1'b1;
+                                transport_keys_down[byte_data] <= 1'b1;
+                            end
+                            8'h09, 8'h44, 8'h0D, 8'h0F: begin // F10/Tab, Set 2 or Set 1
+                                if (!transport_keys_down[byte_data])
+                                    track_next <= 1'b1;
+                                transport_keys_down[byte_data] <= 1'b1;
+                            end
+                            8'h66, 8'h0E: begin // Backspace, PS/2 Set 2 or Set 1
+                                if (!transport_keys_down[byte_data])
+                                    track_prev <= 1'b1;
+                                transport_keys_down[byte_data] <= 1'b1;
+                            end
+                            8'h76: begin // Escape
+                                if (!transport_keys_down[byte_data])
+                                    play_stop <= 1'b1;
+                                transport_keys_down[byte_data] <= 1'b1;
+                            end
+                            default: ;
+                        endcase
                         if (is_note_scan_code(byte_data)) begin
+                            // Suppress typematic repeats; retain make/break identity
+                            // for the polyphonic allocator.
+                            if (!note_keys_down[byte_data]) begin
+                                note_keys_down[byte_data] <= 1'b1;
+                                poly_event <= 1'b1;
+                                poly_down  <= 1'b1;
+                                poly_key   <= byte_data;
+                                poly_note_index <= note_index_for_scan(byte_data);
+                                poly_note_octave <= octave_for_scan(byte_data);
+                                note_index <= note_index_for_scan(byte_data);
+                                note_octave <= octave_for_scan(byte_data);
+                            end
                             if (LEGATO_STACK == 0) begin
                                 // Suppress typematic repeat pulse if key is already held
                                 if (!held_note_valid || byte_data != held_note_scan_code) begin
